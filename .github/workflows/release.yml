@@ -1,0 +1,102 @@
+name: Release AAR
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Test, build, and publish AAR
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Validate release version
+        id: version
+        shell: bash
+        run: |
+          set -euxo pipefail
+          version=$(sed -n 's/^VERSION_NAME=//p' gradle.properties)
+          test -n "$version"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            test "$GITHUB_REF_NAME" = "v$version"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release configuration"
+            echo "- Version: \`$version\`"
+            echo "- Ref: \`$GITHUB_REF\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Print build environment
+        run: |
+          set -euxo pipefail
+          java -version
+          ./gradlew --version
+          sdkmanager --list_installed
+
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --stacktrace --info
+
+      - name: Build release AAR
+        run: ./gradlew assembleRelease --stacktrace --info
+
+      - name: Prepare release artifact
+        id: artifact
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euxo pipefail
+          source_aar=$(find build/outputs/aar -maxdepth 1 -type f -name '*-release.aar' -print -quit)
+          test -f "$source_aar"
+          artifact="rockchip-rknn-android-$VERSION.aar"
+          mkdir -p release
+          cp "$source_aar" "release/$artifact"
+          sha256sum "release/$artifact" | tee "release/$artifact.sha256"
+          unzip -l "release/$artifact"
+          echo "path=release/$artifact" >> "$GITHUB_OUTPUT"
+          echo "checksum=release/$artifact.sha256" >> "$GITHUB_OUTPUT"
+          ls -lah release build/outputs/aar
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rockchip-rknn-android-${{ steps.version.outputs.version }}
+          path: release/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: RKNN Android Runtime ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            ${{ steps.artifact.outputs.path }}
+            ${{ steps.artifact.outputs.checksum }}

@@ -3,6 +3,13 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+group = providers.gradleProperty("GROUP").get()
+version = providers.gradleProperty("VERSION_NAME").get()
+
+base {
+    archivesName.set("rockchip-rknn-android")
+}
+
 android {
     namespace = "androidx.runtime.rknn"
     compileSdk = 35

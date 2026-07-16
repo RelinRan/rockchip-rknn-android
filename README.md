@@ -1,20 +1,22 @@
 # RKNN Android Runtime
 
-`rknn` 是面向 Rockchip NPU 的 Android 推理模块，当前目标设备为 RK3588。模块负责 RKNN Runtime 探测、模型 Session 生命周期、图像预处理、JNI 推理、输出张量解码以及多模型结果分发。
+**English** | [简体中文](README.zh-CN.md)
 
-## 运行要求
+An open-source Android inference library for Rockchip NPUs, currently focused on RK3588 devices. It handles RKNN Runtime discovery, model session lifecycles, image preprocessing, JNI inference, output tensor decoding, multi-model result dispatch, and object tracking.
 
-- Android API 24 及以上
-- RK3588 或其他提供 RKNPU2 Runtime 的兼容设备
-- ABI：`arm64-v8a`、`armeabi-v7a`
-- 当前随模块集成的 `librknnrt.so` 和头文件版本：RKNN Runtime 2.3.2
-- 模型必须提前通过 RKNN-Toolkit2 转换为 `.rknn`
+## Requirements
 
-`.tflite`、`.onnx` 和 `.pt` 文件不能直接交给 Android RKNN Runtime 加载。
+- Android API 24 or later
+- RK3588 or another compatible device providing the RKNPU2 Runtime
+- `arm64-v8a` or `armeabi-v7a`
+- Bundled RKNN Runtime and headers: 2.3.2
+- Models converted to `.rknn` with [RKNN-Toolkit2](https://github.com/airockchip/rknn-toolkit2/tree/master/rknpu2/runtime/Android/librknn_api)
 
-## 引入模块
+Files such as `.tflite`, `.onnx`, and `.pt` cannot be loaded directly by the Android RKNN Runtime. For YOLO model usage and export guidance, see the [Ultralytics YOLO documentation](https://docs.ultralytics.com/).
 
-在应用模块中添加依赖：
+## Installation
+
+Download the AAR from the repository's [GitHub Releases](../../releases), or include this repository as an Android library module:
 
 ```kotlin
 dependencies {
@@ -22,37 +24,21 @@ dependencies {
 }
 ```
 
-模块已经包含 JNI 和以下 Runtime：
+The library includes JNI code and `librknnrt.so` for both supported ABIs.
 
-```text
-rknn/src/main/jniLibs/arm64-v8a/librknnrt.so
-rknn/src/main/jniLibs/armeabi-v7a/librknnrt.so
-```
+## Model Directory
 
-## 模型目录
-
-默认模型目录为：
+The default model directory is:
 
 ```text
 /storage/emulated/0/AiHandHygiene/model/
 ```
 
-示例：
+You can provide a different `File` directory during initialization.
 
-```text
-model/
-├── action.rknn
-├── action.labels
-└── yolo26n-pose-rk3588.rknn
-```
+## Multi-model API
 
-也可以在初始化时直接传入其他 `File` 目录。
-
-## 高层多模型 API
-
-`ModelApi` 适用于目标检测、动作检测和 YOLO Pose 等需要持续接收摄像头帧的场景。
-
-### 配置模型
+`ModelApi` is the high-level API for continuous camera-frame workloads such as object detection, action detection, and YOLO Pose.
 
 ```kotlin
 val actionKey = ModelKey.ACTION
@@ -68,7 +54,6 @@ val config = ModelConfig(
             inputWidth = 640,
             inputHeight = 640,
             scoreThreshold = 0.4f,
-            maxResults = 100,
         ),
         poseKey to DetectorModel(
             fileName = "yolo26n-pose-rk3588.rknn",
@@ -78,117 +63,72 @@ val config = ModelConfig(
             inputWidth = 640,
             inputHeight = 640,
             scoreThreshold = 0.25f,
-            maxResults = 3,
         ),
     ),
-    debug = false,
 )
-```
 
-`ModelKey` 支持任意自定义字符串，不局限于预置的 `TARGET`、`ACTION` 和 `MASK`。
-
-### 初始化
-
-```kotlin
 val modelApi = ModelApi()
-val modelRoot = File(
-    Environment.getExternalStorageDirectory(),
-    "AiHandHygiene/model",
-)
+val state = modelApi.initialize(context, modelRoot, config)
 
-val state = modelApi.initialize(
-    context = context,
-    modelRoot = modelRoot,
-    config = config,
-)
+if (state.readiness(actionKey).ready) {
+    val result = modelApi.detect(actionKey, bitmap)
+}
+
+modelApi.release()
 ```
 
-只有对应模型的 readiness 为 true 时才能提交推理：
+For real-time camera input, use `detectAsync()`. Each `ModelKey` accepts only one in-flight request, preventing camera-frame queues from growing without bounds.
 
-```kotlin
-val poseReady = state.readiness(poseKey).ready
-```
-
-### 同步检测
+### Synchronous and asynchronous inference
 
 ```kotlin
 val result = modelApi.detect(actionKey, bitmap)
-
 if (result.success) {
     result.detections.forEach { detection ->
         val category = detection.categories.first()
         val box = detection.boundingBox
     }
 }
-```
 
-### 异步检测
-
-摄像头实时检测推荐使用异步接口：
-
-```kotlin
 val accepted = modelApi.detectAsync(actionKey, bitmap)
 if (!accepted) {
-    // 当前模型仍在推理，本帧未被接收。
+    // This frame was not accepted because the model is still running.
     bitmap.recycle()
 }
 ```
 
-同一个 `ModelKey` 同时只执行一项异步推理，不会堆积摄像头帧。不同模型拥有独立 busy 锁，但当前通过运行时全局锁串行执行 NPU 推理。
+Different models have independent busy locks, while NPU inference is currently serialized by a runtime-wide lock.
 
-### 订阅结果
-
-```kotlin
-val actionResult: StateFlow<RknnObjectDetectionResult?> =
-    modelApi.result(actionKey)
-
-val poseResult: StateFlow<RknnObjectDetectionResult?> =
-    modelApi.result(poseKey)
-```
-
-Compose 中可以直接使用：
+### Observing results
 
 ```kotlin
-val poseResult by modelApi.result(poseKey).collectAsState()
+val actionResult: StateFlow<RknnObjectDetectionResult?> = modelApi.result(actionKey)
+val poseResult: StateFlow<RknnObjectDetectionResult?> = modelApi.result(poseKey)
 ```
 
-### 释放资源
+In Compose, use `modelApi.result(poseKey).collectAsState()`.
 
-```kotlin
-modelApi.release()
-```
+## DetectorModel Configuration
 
-页面销毁、Activity 结束或模型不再使用时必须释放。`ModelApi` 也实现了 `Closeable`。
-
-## DetectorModel 参数
-
-| 参数 | 说明 |
+| Parameter | Description |
 |---|---|
-| `enabled` | 是否注册该模型 |
-| `fileName` | 模型目录下的 `.rknn` 文件名 |
-| `labels` | 直接配置类别名称 |
-| `labelFileName` | 从模型目录读取标签文件；配置了 `labels` 时优先使用 `labels` |
-| `scoreThreshold` | 最低置信度，范围 `0..1` |
-| `nmsThreshold` | Raw YOLO 和 DFL 输出的按类别 NMS 阈值，默认 `0.5` |
-| `maxResults` | 最多返回的检测数量 |
-| `poseKeyPointCount` | YOLO Pose 关键点数量，默认 COCO 的 `17` 点 |
-| `inputWidth/inputHeight` | 模型输入尺寸，必须与 RKNN 模型一致 |
-| `inputType` | 输入类型，默认 `AUTO` |
-| `inputLayout` | 输入布局，默认 `AUTO` |
-| `normalization` | RGB 归一化参数 |
-| `decoderType` | 模型输出解码格式，建议生产配置显式指定 |
-| `mediaPipeModel` | MediaPipe SSD 模型规格 |
-| `modelType` | 模型业务类型 |
+| `enabled` | Whether the model is registered |
+| `fileName` | `.rknn` filename under the model directory |
+| `labels` | Category names supplied directly |
+| `labelFileName` | Label file in the model directory; `labels` takes precedence |
+| `scoreThreshold` | Minimum confidence in the `0..1` range |
+| `nmsThreshold` | Per-class NMS threshold for raw YOLO and DFL outputs; default `0.5` |
+| `maxResults` | Maximum number of detections returned |
+| `poseKeyPointCount` | YOLO Pose keypoint count; default is the COCO count of `17` |
+| `inputWidth` / `inputHeight` | Input dimensions, which must match the RKNN model |
+| `inputType` | Input data type; default `AUTO` |
+| `inputLayout` | Input tensor layout; default `AUTO` |
+| `normalization` | RGB normalization parameters |
+| `decoderType` | Model output decoder; set this explicitly in production |
+| `mediaPipeModel` | MediaPipe SSD model specification |
+| `modelType` | Business-level model type |
 
-默认归一化公式：
-
-```text
-(pixel - mean) / std
-mean = [0, 0, 0]
-std  = [255, 255, 255]
-```
-
-如果模型图内部已经包含 `/255`，必须改为：
+The default normalization is `(pixel - mean) / std`, with `mean = [0, 0, 0]` and `std = [255, 255, 255]`. If the model graph already performs `/255`, use:
 
 ```kotlin
 normalization = RknnNormalization(
@@ -197,82 +137,38 @@ normalization = RknnNormalization(
 )
 ```
 
-## 已支持的检测解码器
+## Supported Decoders
 
-| 解码器 | 输出格式 |
+| Decoder | Output |
 |---|---|
-| `YOLO_END_TO_END` | `[1,N,6]` 或 `[1,6,N]`，每行包含 `x1,y1,x2,y2,score,classId` |
-| `YOLO_DETECT_RAW` | `[1,N,4+C]`、`[1,4+C,N]` 及带 objectness 的 `5+C` 输出 |
-| `YOLO_DETECT_HEADS` | NCHW/NHWC 的合并或回归/分类分离 DFL 检测头 |
-| `YOLO_POSE_LANDMARK` | `[1,N,6+K*3]` 或转置布局，包含检测框和关键点 |
-| `YOLO_POSE_RAW` | 未执行 NMS 的 Raw Pose 单张量，支持有无 objectness |
-| `YOLO_POSE_HEADS` | 按网格配对的 DFL 框、分类和关键点分支 |
-| `YOLO_SEGMENT` | Raw 检测、mask coefficients 和 NCHW/NHWC prototype |
-| `YOLO_CLASSIFY` | YOLO 分类概率或 logits 向量 |
-| `YOLO_OBB` | 中心点、尺寸、类别分数和弧度角旋转框 |
-| `MEDIA_PIPE_SSD` | MediaPipe Model Maker SSD/RetinaNet Box 和 Score 输出 |
-| `AUTO` | 根据实际输出张量形状自动选择 |
+| `YOLO_END_TO_END` | `[1,N,6]` or `[1,6,N]` end-to-end detections |
+| `YOLO_DETECT_RAW` | Raw YOLO tensors with or without objectness |
+| `YOLO_DETECT_HEADS` | NCHW/NHWC DFL detection heads |
+| `YOLO_POSE_LANDMARK` | Detection boxes and keypoints |
+| `YOLO_POSE_RAW` | Raw pose tensor before NMS |
+| `YOLO_POSE_HEADS` | DFL box, class, and keypoint branches |
+| `YOLO_SEGMENT` | Detections, mask coefficients, and prototypes |
+| `YOLO_CLASSIFY` | Classification probabilities or logits |
+| `YOLO_OBB` | Oriented bounding boxes |
+| `MEDIA_PIPE_SSD` | MediaPipe Model Maker SSD/RetinaNet outputs |
+| `AUTO` | Decoder selected from output tensor shapes |
 
-多标签模型通过 `DetectorModel(multiLabel = true)` 开启。每个检测框仍只返回一个
-`RknnDetection`，达到阈值的类别按分数降序保存在 `categories`。实例分割结果位于
-`segmentationMask`，旋转框位于 `orientedBox`，同时保留普通 `boundingBox`。
+Production configurations should explicitly set `decoderType`; `AUTO` is intended for investigating unknown model outputs.
 
-## 目标跟踪
+Multi-label models are enabled with `DetectorModel(multiLabel = true)`. A box is still represented by one `RknnDetection`; all categories meeting the threshold are stored in descending score order in `categories`. Segmentation results are available through `segmentationMask`, and rotated boxes through `orientedBox`, while the regular `boundingBox` remains available.
 
-跟踪与模型解码相互独立，连续帧检测结果可交给 `RknnTracker`：
+### YOLO Pose results
 
-```kotlin
-val tracker = RknnTracker(
-    RknnTrackerConfig(
-        highScoreThreshold = 0.6f,
-        lowScoreThreshold = 0.1f,
-        matchIouThreshold = 0.3f,
-        minConfirmedFrames = 2,
-        maxLostFrames = 30,
-    ),
-)
-
-val tracked = tracker.update(detectionResult.detections)
-tracker.reset()
-```
-
-`RknnTracker` 使用高低置信度二阶段关联。短暂丢失的轨迹以 `LOST` 状态保留，超过
-`maxLostFrames` 后移除；Track 不是模型输出协议，因此不属于 `RknnDecoderType`。
-
-生产环境建议显式设置 `decoderType`。`AUTO` 更适合调试未知模型输出。
-
-### YOLO Pose 结果
-
-YOLO Pose 关键点位于：
-
-```kotlin
-detection.keyPoints
-```
-
-每个关键点包含：
-
-```kotlin
-RknnKeypoint(
-    index = 0,
-    name = "nose",
-    x = 100f,
-    y = 120f,
-    score = 0.9f,
-)
-```
-
-坐标已经从模型 Letterbox 输入还原到原始 Bitmap 坐标系。
+Pose keypoints are returned in `detection.keyPoints`. Each `RknnKeypoint` contains its index, name, `x`/`y` coordinates, and score. Coordinates are mapped from the letterboxed model input back into the submitted Bitmap's coordinate system.
 
 ## MediaPipe Object Detector
 
-支持以下 Model Maker 模型转换后的 RKNN 输出：
+The decoder supports RKNN-converted outputs from these MediaPipe Model Maker variants:
 
-- `MOBILENET_V2`：256×256
-- `MOBILENET_V2_I320`：320×320
-- `MOBILENET_MULTI_AVG`：256×256
-- `MOBILENET_MULTI_AVG_I384`：384×384
-
-示例：
+- `MOBILENET_V2`: 256 x 256
+- `MOBILENET_V2_I320`: 320 x 320
+- `MOBILENET_MULTI_AVG`: 256 x 256
+- `MOBILENET_MULTI_AVG_I384`: 384 x 384
 
 ```kotlin
 DetectorModel(
@@ -285,16 +181,25 @@ DetectorModel(
 )
 ```
 
-## 底层 RknnRuntime
+## Tracking
 
-需要图像分类、MediaPipe Pose Landmark、Hand Landmark 或原始张量时，使用 `RknnRuntime`。
+`RknnTracker` applies two-stage high/low-confidence association to detections across frames:
+
+```kotlin
+val tracker = RknnTracker(RknnTrackerConfig())
+val tracked = tracker.update(detectionResult.detections)
+tracker.reset()
+```
+
+Temporarily unmatched tracks remain in the `LOST` state and are removed after `maxLostFrames`. Tracking is independent from model output decoding and is therefore not a `RknnDecoderType`.
+
+## Low-level RknnRuntime
+
+Use `RknnRuntime` when you need raw tensors, image classification, MediaPipe Pose Landmark, or Hand Landmark output.
 
 ```kotlin
 val runtime = RknnRuntime()
-runtime.initialize(
-    context,
-    RknnOptions(modelRoot = modelRoot, debug = false),
-)
+runtime.initialize(context, RknnOptions(modelRoot = modelRoot, debug = false))
 
 runtime.registerModel(
     RknnModelConfig(
@@ -307,132 +212,69 @@ runtime.registerModel(
         decoderType = RknnDecoderType.YOLO_END_TO_END,
     ),
 )
-```
 
-底层接口：
-
-```kotlin
-runtime.run(modelId, bitmap)                 // 原始张量
-runtime.detectObjects(modelId, bitmap)       // 目标检测和 YOLO Pose
-runtime.classifyImage(modelId, bitmap)        // 图像分类
+runtime.run(modelId, bitmap)                 // Raw tensors
+runtime.detectObjects(modelId, bitmap)       // Object detection and YOLO Pose
+runtime.classifyImage(modelId, bitmap)       // Image classification
 runtime.detectPoseLandmarks(modelId, bitmap) // Pose Landmark ROI
 runtime.detectHandLandmarks(modelId, bitmap) // Hand Landmark ROI
-runtime.retryModel(modelId)                  // 显式重试失败的 Session
+runtime.retryModel(modelId)                  // Explicitly retry a failed session
 runtime.unregisterModel(modelId)
 runtime.close()
 ```
 
-Session 在 `registerModel()` 时立即创建。首次创建失败后不会逐帧重试，只有重新注册、重置 SDK 或调用 `retryModel()` 才会再次创建。
+A session is created immediately by `registerModel()`. A failed initial creation is not retried on every frame; re-register the model, reset the SDK, or call `retryModel()`.
 
-## 图像分类
+## Image Classification
 
-支持以下 EfficientNet-Lite 分类输出：
+Supported classification outputs include EfficientNet-Lite0 and EfficientNet-Lite2 in Float32 and Int8 variants. Results support direct probabilities, logits with Softmax, threshold filtering, and Top-K ordering.
 
-- EfficientNet-Lite0 Float32
-- EfficientNet-Lite0 Int8
-- EfficientNet-Lite2 Float32
-- EfficientNet-Lite2 Int8
+## Pose and Hand Landmark
 
-分类结果支持概率直出、Logits Softmax、阈值过滤和 Top-K 排序。
+Supported landmark submodels are Pose Landmark Lite, Full, and Heavy, plus Hand Landmark Full. These decoders target the landmark submodels inside official `.task` packages. They do not include the detector, rotated ROI preparation, or video tracking pipeline; callers must supply a detector-cropped and rotation-corrected ROI Bitmap.
 
-## Pose 和 Hand Landmark
+## Debug Logging
 
-支持：
+Set `debug = true` in `ModelConfig` or `RknnOptions` to log device/runtime versions, model and decoder details, tensor shapes and quantization, memory usage, inference timing, and output summaries. Runtime errors remain logged when debug output is disabled.
 
-- Pose Landmark Lite、Full、Heavy
-- Hand Landmark Full
+Tensor enum logs include both names and numeric values, for example `type=FP16(1)`, `format=NHWC(1)`, and `quantization=AFFINE(2)`.
 
-这些解码器对应官方 `.task` 包中的 Landmark 子模型，不包含 detector、旋转 ROI 和视频跟踪管线。调用前必须提供 detector 裁剪并完成旋转矫正的 ROI Bitmap。
+## Multi-model Scheduling
 
-## Debug 日志
+On RK3588, a practical starting point for concurrent Action and Pose workloads is roughly 80 ms between Action submissions (about 8-12 FPS) and 250 ms between Pose submissions (about 3-4 FPS). Do not submit every camera frame to every model. Schedule each model independently with `detectAsync()` and recycle the Bitmap when it returns `false`.
 
-```kotlin
-ModelConfig(models = models, debug = true)
-```
-
-`debug=true` 会输出：
-
-- 芯片和 RKNPU 驱动版本
-- RKNN Runtime/API 版本
-- 模型文件、业务类型和解码器
-- 输入输出张量名称、维度、类型、布局和量化参数
-- 模型权重、内部内存、DMA 和 SRAM 信息
-- 单次推理耗时与输出张量摘要
-
-张量枚举同时显示名称和编号，例如：
-
-```text
-type=FP16(1)
-format=NHWC(1)
-format=UNDEFINED(3)
-quantization=AFFINE(2)
-```
-
-`debug=false` 时不打印 JNI INFO 和逐帧调试日志，但真正的初始化、加载和推理错误仍会记录。
-
-## 多模型调度建议
-
-RK3588 同时运行 Action 和 Pose 时建议降低 Pose 频率：
-
-```text
-Action：80 ms，约 8～12 FPS
-Pose：250 ms，约 3～4 FPS
-```
-
-不要将每个摄像头帧无条件提交给全部模型。应根据模型间隔调用 `detectAsync()`，并在返回 false 时回收未接收的 Bitmap。
-
-## 常见问题
+## Troubleshooting
 
 ### `Supported detection output tensors not found`
 
-实际输出形状与 `decoderType` 不匹配。开启 debug，查看：
-
-```text
-model tensor direction=output ... dims=[...]
-```
-
-例如 YOLO26 Pose 端到端模型输出 `[1,300,57]`，应配置：
-
-```kotlin
-decoderType = RknnDecoderType.YOLO_POSE_LANDMARK
-```
+The actual output shape does not match `decoderType`. Enable debug logging and inspect `model tensor direction=output ... dims=[...]`. For example, an end-to-end YOLO26 Pose output shaped `[1,300,57]` should use `YOLO_POSE_LANDMARK`.
 
 ### `openSession failed`
 
-检查：
+Check that the model targets the device chip (for example `rk3588`), RKNN-Toolkit2 is compatible with the device Runtime, the model file is complete, `/vendor/lib64/librknnrt.so` exists, and the RKNPU driver is available.
 
-- 模型是否为目标芯片 `rk3588`
-- RKNN-Toolkit2 与设备 Runtime 是否兼容
-- 模型文件是否完整
-- `/vendor/lib64/librknnrt.so` 是否存在
-- RKNPU 驱动是否可用
+### Incorrect detection box positions
 
-### 检测框位置不正确
+The decoder returns coordinates in the submitted Bitmap's coordinate system, not the physical pixels of a `TextureView`. Ensure that inference input dimensions and overlay source-image dimensions agree.
 
-确认提交给推理的 Bitmap 尺寸与绘制覆盖层使用的原图尺寸一致。解码器返回的是提交 Bitmap 的坐标系，不是 `TextureView` 的物理像素坐标。
+### Unexpectedly low accuracy
 
-### 识别率明显降低
+Check for duplicate `/255` normalization, RGB/BGR ordering, input dimensions, FP16/INT8 conversion parameters, and whether the label count matches the output class count.
 
-重点检查：
-
-- 是否重复执行 `/255` 归一化
-- RGB/BGR 顺序是否正确
-- 输入尺寸是否与转换模型一致
-- FP16/INT8 转换参数是否正确
-- 标签数量是否与输出类别数量一致
-
-## 构建与测试
+## Build and Test
 
 ```bash
-./gradlew :rknn:testDebugUnitTest
-./gradlew :rknn:assembleDebug
-./gradlew :app:assembleDebug
+./gradlew testDebugUnitTest
+./gradlew assembleRelease
 ```
 
-Windows：
+The release AAR is generated under `build/outputs/aar/`. Pushing a semantic-version tag such as `v1.0.0` runs the GitHub Actions release workflow and attaches the versioned AAR to a GitHub Release.
 
-```powershell
-.\gradlew.bat :rknn:testDebugUnitTest
-.\gradlew.bat :rknn:assembleDebug
-.\gradlew.bat :app:assembleDebug
-```
+## Related Projects
+
+- [Ultralytics YOLO](https://docs.ultralytics.com/)
+- [RKNN-Toolkit2 Android Runtime API](https://github.com/airockchip/rknn-toolkit2/tree/master/rknpu2/runtime/Android/librknn_api)
+
+## License
+
+Licensed under the [MIT License](LICENSE).
