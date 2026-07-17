@@ -6,8 +6,9 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * 管理模型 Session 及每个 Session 的推理锁。
- * 首次创建失败后会阻止逐帧重试，只有重置失败状态后才允许重新创建。
+ * Provides the `RockchipSessionManager` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RockchipSessionManager` where its surrounding API requires this contract.
  */
 internal class RockchipSessionManager(
     private val nativeBridge: RknnNativeBridge,
@@ -19,6 +20,11 @@ internal class RockchipSessionManager(
     private val sessionLocks = ConcurrentHashMap<String, Any>()
 
     @Synchronized
+    /**
+     * Executes `ensureSession` for the RKNN runtime contract.
+     * @param model Value supplied for `model`.
+     * @param modelFile RKNN model file to open.
+     */
     fun ensureSession(model: RknnModelConfig, modelFile: File): Long {
         sessionHandles[model.id]?.let { return it }
         if (failedModelIds.contains(model.id)) return 0L
@@ -34,10 +40,20 @@ internal class RockchipSessionManager(
         return handle
     }
 
+    /**
+     * Executes `resetFailure` for the RKNN runtime contract.
+     * @param modelId Identifier of the registered model.
+     */
     fun resetFailure(modelId: String) {
         failedModelIds.remove(modelId)
     }
 
+    /**
+     * Executes `withSession` for the RKNN runtime contract.
+     * @param model Value supplied for `model`.
+     * @param modelFile RKNN model file to open.
+     * @param operation Value supplied for `operation`.
+     */
     fun <T> withSession(model: RknnModelConfig, modelFile: File, operation: (Long) -> T): T? {
         val lock = sessionLocks.computeIfAbsent(model.id) { Any() }
         return synchronized(lock) {
@@ -46,6 +62,10 @@ internal class RockchipSessionManager(
         }
     }
 
+    /**
+     * Executes `closeSession` for the RKNN runtime contract.
+     * @param modelId Identifier of the registered model.
+     */
     fun closeSession(modelId: String) {
         val lock = sessionLocks.computeIfAbsent(modelId) { Any() }
         synchronized(lock) {
@@ -55,6 +75,9 @@ internal class RockchipSessionManager(
         sessionLocks.remove(modelId, lock)
     }
 
+    /**
+     * Executes `closeAll` for the RKNN runtime contract.
+     */
     fun closeAll() {
         sessionHandles.entries.forEach { (_, handle) ->
             nativeBridge.closeSession(handle)

@@ -25,8 +25,9 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * RKNN 模型运行时，负责环境探测、模型注册、Session 生命周期和推理调度。
- * 每个实例独立维护模型及 Session，调用结束后应执行 [close]。
+ * Provides the `RknnRuntime` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnRuntime` where its surrounding API requires this contract.
  */
 class RknnRuntime internal constructor(
     private val bridgeFactory: (RknnBackend) -> RknnNativeBridge,
@@ -51,6 +52,11 @@ class RknnRuntime internal constructor(
     private var sessionManager: RockchipSessionManager = RockchipSessionManager(nativeBridge)
     private val lifecycleLock = Any()
 
+    /**
+     * Executes `initialize` for the RKNN runtime contract.
+     * @param context Android context used to access storage and native resources.
+     * @param options Runtime initialization options.
+     */
     fun initialize(context: Context, options: RknnOptions = RknnOptions()): RknnState {
         if (options.debug) {
             Log.i(
@@ -91,6 +97,9 @@ class RknnRuntime internal constructor(
         return state
     }
 
+    /**
+     * Executes `deviceInfo` for the RKNN runtime contract.
+     */
     fun deviceInfo(): RknnDeviceInfo {
         val reasons = mutableListOf<String>()
         val markerSupported = RockchipProbe.isRockchipNpuAvailable(reasons)
@@ -105,6 +114,10 @@ class RknnRuntime internal constructor(
         )
     }
 
+    /**
+     * Executes `registerModel` for the RKNN runtime contract.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun registerModel(config: RknnModelConfig): Boolean {
         val context = appContext
         if (context == null) {
@@ -146,6 +159,10 @@ class RknnRuntime internal constructor(
         return true
     }
 
+    /**
+     * Executes `retryModel` for the RKNN runtime contract.
+     * @param modelId Identifier of the registered model.
+     */
     fun retryModel(modelId: String): Boolean {
         synchronized(lifecycleLock) {
             if (state != RknnState.READY) return false
@@ -163,8 +180,15 @@ class RknnRuntime internal constructor(
         }
     }
 
+    /**
+     * Executes `registeredModels` for the RKNN runtime contract.
+     */
     fun registeredModels(): List<RknnModelConfig> = models.values.sortedBy { it.id }
 
+    /**
+     * Executes `unregisterModel` for the RKNN runtime contract.
+     * @param modelId Identifier of the registered model.
+     */
     fun unregisterModel(modelId: String) {
         synchronized(lifecycleLock) {
             val removed = models.remove(modelId)
@@ -179,6 +203,9 @@ class RknnRuntime internal constructor(
         }
     }
 
+    /**
+     * Executes `clearModels` for the RKNN runtime contract.
+     */
     fun clearModels() {
         synchronized(lifecycleLock) {
             val count = models.size
@@ -188,6 +215,12 @@ class RknnRuntime internal constructor(
         }
     }
 
+    /**
+     * Executes `run` for the RKNN runtime contract.
+     * @param modelId Identifier of the registered model.
+     * @param bitmap Source bitmap to preprocess and run through the model.
+     * @param extras Optional backend-specific inference values.
+     */
     fun run(modelId: String, bitmap: Bitmap, extras: Map<String, Any?> = emptyMap()): RknnInferenceResult {
         val startedAt = SystemClock.elapsedRealtime()
         if (options.debug) {
@@ -275,6 +308,12 @@ class RknnRuntime internal constructor(
         return result
     }
 
+    /**
+     * Executes `detectObjects` for the RKNN runtime contract.
+     * @param modelId Identifier of the registered model.
+     * @param bitmap Source bitmap to preprocess and run through the model.
+     * @param extras Optional backend-specific inference values.
+     */
     fun detectObjects(
         modelId: String,
         bitmap: Bitmap,
@@ -324,7 +363,13 @@ class RknnRuntime internal constructor(
         )
     }
 
-    /** 执行图像分类，并返回经过概率处理、阈值过滤和 Top-K 排序的类别。 */
+    /** Runs classification and returns probability-normalized, thresholded Top-K categories. */
+    /**
+     * Executes `classifyImage` for the RKNN runtime contract.
+     * @param modelId Identifier of the registered model.
+     * @param bitmap Source bitmap to preprocess and run through the model.
+     * @param extras Optional backend-specific inference values.
+     */
     fun classifyImage(
         modelId: String,
         bitmap: Bitmap,
@@ -371,7 +416,12 @@ class RknnRuntime internal constructor(
         )
     }
 
-    /** 解码已按人体 ROI 裁剪后的 Pose Landmark 模型输出。 */
+    /** Decodes Pose Landmark output for a bitmap already cropped to a person ROI. */
+    /**
+     * Executes `detectPoseLandmarks` for the RKNN runtime contract.
+     * @param modelId Identifier of the registered model.
+     * @param bitmap Source bitmap to preprocess and run through the model.
+     */
     fun detectPoseLandmarks(modelId: String, bitmap: Bitmap): RknnPoseLandmarkResult {
         val result = run(modelId, bitmap)
         if (!result.success) return failedPoseResult(result, modelId, result.message)
@@ -406,7 +456,12 @@ class RknnRuntime internal constructor(
         )
     }
 
-    /** 解码已按手部 ROI 裁剪后的 Hand Landmark 模型输出。 */
+    /** Decodes Hand Landmark output for a bitmap already cropped to a hand ROI. */
+    /**
+     * Executes `detectHandLandmarks` for the RKNN runtime contract.
+     * @param modelId Identifier of the registered model.
+     * @param bitmap Source bitmap to preprocess and run through the model.
+     */
     fun detectHandLandmarks(modelId: String, bitmap: Bitmap): RknnHandLandmarkResult {
         val result = run(modelId, bitmap)
         if (!result.success) return failedHandResult(result, modelId, result.message)

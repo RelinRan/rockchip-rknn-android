@@ -26,6 +26,80 @@ dependencies {
 
 The library includes JNI code and `librknnrt.so` for both supported ABIs.
 
+### Use the released AAR
+
+Download `rockchip-rknn-android-<version>.aar` from [Releases](../../releases), place it in the application module's `libs/` directory, and add:
+
+```kotlin
+dependencies {
+    implementation(files("libs/rockchip-rknn-android-1.0.0.aar"))
+}
+```
+
+The AAR contains Kotlin classes, `librknn_jni.so`, and `librknnrt.so` for `arm64-v8a` and `armeabi-v7a`. Keep the required ABIs enabled in the consuming application.
+
+### Storage and permissions
+
+Prefer an app-owned model directory such as `context.filesDir` or `context.getExternalFilesDir(null)`, which requires no storage permission:
+
+```kotlin
+val modelRoot = File(context.getExternalFilesDir(null), "models").apply { mkdirs() }
+```
+
+The historical `/storage/emulated/0/AiHandHygiene/model/` path is subject to scoped-storage restrictions. On recent Android versions, use app-owned storage or copy user-selected files from the Storage Access Framework. The library manifest declares no permissions; camera permission and image acquisition remain the application's responsibility.
+
+## Which API Should I Use?
+
+| API | Recommended use |
+|---|---|
+| `ModelApi` | Multiple object/pose models, camera frames, result flows, and backpressure |
+| `RknnRuntime` | Explicit registration, raw tensors, classification, detection, and landmarks |
+| Process-wide compatibility objects | Migration from `RknnApi`, `RknnObjectDetector`, `RknnImageClassifier`, and landmark helpers |
+| `RknnRuntimeSession` | Direct RKNN contexts, core masks, dynamic shapes, and native memory |
+
+For new code, own a `ModelApi` or `RknnRuntime` instance and close it with the Activity, ViewModel, service, or other component lifecycle.
+
+## Complete Runtime Lifecycle
+
+```kotlin
+val runtime = RknnRuntime()
+val state = runtime.initialize(
+    context,
+    RknnOptions(modelRoot = modelRoot, debug = BuildConfig.DEBUG),
+)
+check(state == RknnState.READY) { runtime.deviceInfo().reasons.joinToString() }
+
+check(runtime.registerModel(
+    RknnModelConfig(
+        id = "detector",
+        type = RknnModelType.OBJECT_DETECTOR,
+        fileName = "yolo.rknn",
+        inputWidth = 640,
+        inputHeight = 640,
+        labels = listOf("person", "helmet"),
+        decoderType = RknnDecoderType.YOLO_END_TO_END,
+        scoreThreshold = 0.25f,
+        nmsThreshold = 0.5f,
+        maxResults = 100,
+    ),
+))
+
+val result = runtime.detectObjects("detector", bitmap)
+if (result.success) {
+    result.detections.forEach { detection ->
+        val bestCategory = detection.categories.firstOrNull()
+        val sourcePixelBox = detection.boundingBox
+    }
+} else {
+    Log.e("RKNN", result.message.orEmpty())
+}
+
+runtime.unregisterModel("detector")
+runtime.close()
+```
+
+Registration verifies the model file and creates its native session immediately. A failed session is remembered to prevent retries on every frame; correct the cause and call `retryModel(id)`, or unregister and register again. Model IDs must be unique.
+
 ## Model Directory
 
 The default model directory is:
@@ -108,6 +182,10 @@ val poseResult: StateFlow<RknnObjectDetectionResult?> = modelApi.result(poseKey)
 
 In Compose, use `modelApi.result(poseKey).collectAsState()`.
 
+### Bitmap ownership and concurrency
+
+`detect()` is synchronous and never recycles the Bitmap. `detectAsync()` returns `true` only when the request is accepted. When it returns `false`, the caller still owns the Bitmap and should recycle or reuse it. Do not mutate an accepted Bitmap until inference finishes. Each model has an independent busy gate, while native NPU execution is serialized for runtime safety.
+
 ## DetectorModel Configuration
 
 | Parameter | Description |
@@ -151,9 +229,56 @@ normalization = RknnNormalization(
 | `YOLO_CLASSIFY` | Classification probabilities or logits |
 | `YOLO_OBB` | Oriented bounding boxes |
 | `MEDIA_PIPE_SSD` | MediaPipe Model Maker SSD/RetinaNet outputs |
+| `MEDIA_PIPE_IMAGE_CLASSIFIER` | EfficientNet-Lite probability or logits output |
+| `MEDIA_PIPE_POSE_LANDMARK` | Pose landmarks, world landmarks, presence, and optional mask |
+| `MEDIA_PIPE_HAND_LANDMARK` | Hand landmarks, world landmarks, presence, and handedness |
 | `AUTO` | Decoder selected from output tensor shapes |
 
 Production configurations should explicitly set `decoderType`; `AUTO` is intended for investigating unknown model outputs.
+
+### Decoder selection guide
+
+| Exported output | Decoder |
+|---|---|
+| `x1,y1,x2,y2,score,classId` rows | `YOLO_END_TO_END` |
+| One raw `4+C` or `5+C` candidate tensor | `YOLO_DETECT_RAW` |
+| Separate DFL box and class heads | `YOLO_DETECT_HEADS` |
+| End-to-end boxes plus `K*3` pose values | `YOLO_POSE_LANDMARK` |
+| Raw pose candidates | `YOLO_POSE_RAW` |
+| Separate DFL box, class, and keypoint heads | `YOLO_POSE_HEADS` |
+| Detections, mask coefficients, and prototype | `YOLO_SEGMENT` |
+| Classification vector | `YOLO_CLASSIFY` |
+| Center, size, scores, and rotation angle | `YOLO_OBB` |
+
+Tensor dimensions vary by exporter. Enable debug logging and compare actual output names and dimensions before choosing a decoder.
+
+## Inputs, Labels, and Coordinates
+
+- Bitmaps are converted to RGB, letterboxed to `inputWidth x inputHeight`, and normalized per channel.
+- `inputType=AUTO` and `inputLayout=AUTO` use tensor metadata. Override them only when the converted model explicitly requires `UINT8`, `INT8`, `FLOAT16`, `FLOAT32`, `NHWC`, or `NCHW`.
+- Inline `labels` take precedence over `labelFileName`; label files contain one UTF-8 label per line.
+- Boxes and YOLO keypoints are mapped to submitted-Bitmap pixel coordinates.
+- MediaPipe landmark coordinates remain normalized; world landmarks are measured in meters.
+- Segmentation masks retain their own dimensions and can be resized or converted with `toBinary(threshold)`.
+
+### Reading specialized results
+
+```kotlin
+val classification = runtime.classifyImage("classifier", bitmap)
+classification.categories.forEach { Log.d("RKNN", "${it.name}: ${it.score}") }
+
+result.detections.forEach { detection ->
+    val binaryMask = detection.segmentationMask?.toBinary(0.5f)
+    val rotatedCorners = detection.orientedBox?.corners
+    val posePoints = detection.keyPoints
+}
+
+// Landmark calls require an already cropped and rotation-corrected ROI.
+val pose = runtime.detectPoseLandmarks("pose-landmark", personRoiBitmap)
+val hand = runtime.detectHandLandmarks("hand-landmark", handRoiBitmap)
+```
+
+Classification configurations can set `classifierModel` and `classifierScoreType`. Landmark configurations can set `poseLandmarkModel` or `handLandmarkModel` to enforce the corresponding input size.
 
 Multi-label models are enabled with `DetectorModel(multiLabel = true)`. A box is still represented by one `RknnDetection`; all categories meeting the threshold are stored in descending score order in `categories`. Segmentation results are available through `segmentationMask`, and rotated boxes through `orientedBox`, while the regular `boundingBox` remains available.
 
@@ -225,6 +350,25 @@ runtime.close()
 
 A session is created immediately by `registerModel()`. A failed initial creation is not retried on every frame; re-register the model, reset the SDK, or call `retryModel()`.
 
+## Advanced Native Session API
+
+`RknnRuntimeSession` exposes context duplication, NPU core selection, non-blocking execution, dynamic shapes, and native tensor memory. It is intended for callers familiar with the RKNN C API; normal image inference should use `RknnRuntime`.
+
+```kotlin
+RknnRuntimeSession.open(File(modelRoot, "model.rknn"), debug = true).use { session ->
+    session.setCoreMask(RknnCoreMask.CORE_0_1_2)
+    session.setInputShape(0, 1, 640, 640, 3)
+    session.createMemory(640L * 640L * 3L).use { memory ->
+        memory.buffer?.apply { clear(); put(rgbBytes) }
+        memory.synchronize(RknnMemorySyncMode.TO_DEVICE)
+        session.setIoMemory(memory, tensorIndex = 0, input = true)
+        session.execute()
+    }
+}
+```
+
+Memory belongs to its creating session. Close memory before the session, use a direct buffer for physical memory, and treat non-zero native return codes as RKNN API errors.
+
 ## Image Classification
 
 Supported classification outputs include EfficientNet-Lite0 and EfficientNet-Lite2 in Float32 and Int8 variants. Results support direct probabilities, logits with Softmax, threshold filtering, and Top-K ordering.
@@ -265,10 +409,11 @@ Check for duplicate `/255` normalization, RGB/BGR ordering, input dimensions, FP
 
 ```bash
 ./gradlew testDebugUnitTest
+./gradlew externalNativeBuildRelease
 ./gradlew assembleRelease
 ```
 
-The release AAR is generated under `build/outputs/aar/`. Pushing a semantic-version tag such as `v1.0.0` runs the GitHub Actions release workflow and attaches the versioned AAR to a GitHub Release.
+JNI outputs are generated below `build/intermediates/cmake/release/obj/<abi>/`; the AAR is generated under `build/outputs/aar/`. Refresh checked-in `output/<abi>/librknn_jni.so` after JNI changes. Pushing a tag matching `VERSION_NAME`, such as `v1.0.0`, runs tests and publishes the versioned AAR plus SHA-256 checksum.
 
 ## Related Projects
 

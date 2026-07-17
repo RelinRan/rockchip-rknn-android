@@ -2,7 +2,12 @@ package androidx.runtime.rknn.internal
 
 import java.nio.ByteBuffer
 
-/** Kotlin 与 librknn_jni.so 之间的原生方法声明。 */
+/**
+ * Native boundary between Kotlin and `librknn_jni.so`.
+ *
+ * Usage: higher-level runtime classes call these methods after this object loads the JNI
+ * library. Native handles are opaque, non-zero values and must be released by their owner.
+ */
 internal object RknnJni {
 
     init {
@@ -13,8 +18,10 @@ internal object RknnJni {
 
     external fun nativeRuntimeName(): String
 
+    /** Opens [modelPath] and returns an opaque session handle, or zero on failure. */
     external fun nativeOpenSession(modelPath: String, debug: Boolean): Long
 
+    /** Releases the native session identified by [handle]. */
     external fun nativeCloseSession(handle: Long)
 
     external fun nativeDuplicateSession(handle: Long): Long
@@ -36,6 +43,20 @@ internal object RknnJni {
     external fun nativeSetInputShapes(handle: Long, tensorIndices: IntArray, dimensions: Array<IntArray>): Int
     external fun nativeSynchronizeMemory(handle: Long, memoryHandle: Long, mode: Int): Int
 
+    /**
+     * Runs synchronous inference for one RGB image.
+     *
+     * @param handle Open native session handle.
+     * @param imageBytes Packed image bytes in RGB channel order.
+     * @param width Input image width in pixels.
+     * @param height Input image height in pixels.
+     * @param channels Number of packed channels, normally three.
+     * @param inputType Native RKNN tensor-type code.
+     * @param inputLayout Native RKNN tensor-layout code.
+     * @param mean Per-channel normalization means.
+     * @param std Per-channel normalization divisors.
+     * @return Native status and output tensors.
+     */
     external fun nativeRun(
         handle: Long,
         imageBytes: ByteArray,

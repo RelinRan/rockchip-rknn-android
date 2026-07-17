@@ -1,6 +1,10 @@
 package androidx.runtime.rknn
 
-/** 输入张量的数据类型；AUTO 表示采用模型声明的类型。 */
+/**
+ * Provides the `RknnInputType` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnInputType` where its surrounding API requires this contract.
+ */
 enum class RknnInputType(internal val nativeCode: Int) {
     AUTO(0),
     UINT8(1),
@@ -9,14 +13,22 @@ enum class RknnInputType(internal val nativeCode: Int) {
     FLOAT32(4),
 }
 
-/** 输入张量的数据布局；AUTO 表示采用模型声明的布局。 */
+/**
+ * Provides the `RknnInputLayout` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnInputLayout` where its surrounding API requires this contract.
+ */
 enum class RknnInputLayout(internal val nativeCode: Int) {
     AUTO(0),
     NHWC(1),
     NCHW(2),
 }
 
-/** 浮点输入的归一化参数，计算公式为 `(像素值 - mean) / std`。 */
+/**
+ * Provides the `RknnNormalization` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnNormalization` where its surrounding API requires this contract.
+ */
 data class RknnNormalization(
     val mean: FloatArray = floatArrayOf(0f, 0f, 0f),
     val std: FloatArray = floatArrayOf(255f, 255f, 255f),

@@ -10,11 +10,22 @@ import kotlin.math.exp
 import kotlin.math.pow
 import kotlin.math.sqrt
 
-/** 解码未经过 TFLite 后处理的 MediaPipe Model Maker SSD/RetinaNet 输出。 */
+/**
+ * Provides the `MediaPipeSsdDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `MediaPipeSsdDecoder` where its surrounding API requires this contract.
+ */
 internal object MediaPipeSsdDecoder {
     private const val BOX_COORDINATES = 4
     private const val NMS_IOU_THRESHOLD = 0.5f
 
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param boxes Value supplied for `boxes`.
+     * @param scores Value supplied for `scores`.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(
         boxes: NativeTensorOutput,
         scores: NativeTensorOutput,
@@ -77,7 +88,11 @@ internal object MediaPipeSsdDecoder {
         return nonMaximumSuppression(candidates, config.maxResults)
     }
 
-    /** 按模型的特征层、尺度和宽高比生成与训练端顺序一致的锚框。 */
+    /** Generates anchors in the same feature-layer, scale, and aspect-ratio order as training. */
+    /**
+     * Executes `generateAnchors` for the RKNN runtime contract.
+     * @param model Value supplied for `model`.
+     */
     internal fun generateAnchors(model: MediaPipeObjectDetectorModel): List<Anchor> {
         require(model != MediaPipeObjectDetectorModel.AUTO)
         val anchors = ArrayList<Anchor>(model.anchorCount)

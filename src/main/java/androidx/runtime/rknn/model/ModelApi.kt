@@ -24,8 +24,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
 /**
- * 多模型业务入口，分别管理人员追踪、洗手动作和帽子口罩检测模型。
- * 同一模型同时只执行一项异步推理，避免摄像头帧堆积。
+ * Provides the `ModelApi` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `ModelApi` where its surrounding API requires this contract.
  */
 class ModelApi internal constructor(
     private val runtime: ModelRuntime,
@@ -46,6 +47,12 @@ class ModelApi internal constructor(
     private var executionMode = ModelExecutionMode.SERIAL
     private var scope: CoroutineScope? = null
 
+    /**
+     * Executes `initialize` for the RKNN runtime contract.
+     * @param context Android context used to access storage and native resources.
+     * @param modelRoot Value supplied for `modelRoot`.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun initialize(context: Context, modelRoot: File, config: ModelConfig): MultimodalState {
         releaseResources()
         val runtimeState = runtime.initialize(
@@ -55,6 +62,13 @@ class ModelApi internal constructor(
         return initializeModelRoot(modelRoot, config, runtimeState)
     }
 
+    /**
+     * Executes `initialize` for the RKNN runtime contract.
+     * @param context Android context used to access storage and native resources.
+     * @param project Value supplied for `project`.
+     * @param modelDir Value supplied for `modelDir`.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun initialize(
         context: Context,
         project: String,
@@ -65,6 +79,12 @@ class ModelApi internal constructor(
         return initialize(context, root, config)
     }
 
+    /**
+     * Executes `initializeModelRoot` for the RKNN runtime contract.
+     * @param modelRoot Value supplied for `modelRoot`.
+     * @param config Model or runtime configuration used by the operation.
+     * @param runtimeState Value supplied for `runtimeState`.
+     */
     internal fun initializeModelRoot(
         modelRoot: File,
         config: ModelConfig,
@@ -145,15 +165,34 @@ class ModelApi internal constructor(
         return publishInitializationState(modelConfigs, readiness, emptyMap(), lifecycle, messages)
     }
 
-    /** 获取指定模型的结果流；自定义 key 在初始化前也可以订阅。 */
+    /** Returns the result stream for [key]; custom keys may be observed before initialization. */
+    /**
+     * Executes `result` for the RKNN runtime contract.
+     * @param key Stable key identifying a configured model.
+     */
     fun result(key: ModelKey): StateFlow<RknnObjectDetectionResult?> = resultFlow(key).asStateFlow()
 
+    /**
+     * Executes `detect` for the RKNN runtime contract.
+     * @param key Stable key identifying a configured model.
+     * @param bitmap Source bitmap to preprocess and run through the model.
+     */
     fun detect(key: ModelKey, bitmap: Bitmap): RknnObjectDetectionResult =
         executeDetection(key) { runtime.detectObjects(key.value, bitmap) }
 
+    /**
+     * Executes `detectAsync` for the RKNN runtime contract.
+     * @param key Stable key identifying a configured model.
+     * @param bitmap Source bitmap to preprocess and run through the model.
+     */
     fun detectAsync(key: ModelKey, bitmap: Bitmap): Boolean =
         executeDetectionAsync(key) { runtime.detectObjects(key.value, bitmap) }
 
+    /**
+     * Executes `executeDetection` for the RKNN runtime contract.
+     * @param key Stable key identifying a configured model.
+     * @param operation Value supplied for `operation`.
+     */
     internal fun executeDetection(
         key: ModelKey,
         operation: () -> RknnObjectDetectionResult,
@@ -175,6 +214,11 @@ class ModelApi internal constructor(
             .also { resultFlow(key).value = it }
     }
 
+    /**
+     * Executes `executeDetectionAsync` for the RKNN runtime contract.
+     * @param key Stable key identifying a configured model.
+     * @param operation Value supplied for `operation`.
+     */
     internal fun executeDetectionAsync(
         key: ModelKey,
         operation: () -> RknnObjectDetectionResult,
@@ -194,6 +238,9 @@ class ModelApi internal constructor(
         return true
     }
 
+    /**
+     * Executes `release` for the RKNN runtime contract.
+     */
     fun release() {
         releaseResources()
         _state.value = MultimodalState(lifecycle = MultimodalLifecycle.RELEASED)

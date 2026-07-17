@@ -6,7 +6,11 @@ import androidx.runtime.rknn.RknnInferenceResult
 import androidx.runtime.rknn.RknnModelConfig
 import androidx.runtime.rknn.data.RknnImage
 
-/** RKNN 不可用时使用的空桥接实现，所有操作都安全失败。 */
+/**
+ * Provides the `NoopNativeBridge` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `NoopNativeBridge` where its surrounding API requires this contract.
+ */
 internal class NoopNativeBridge : RknnNativeBridge {
     override fun isAvailable(): Boolean = false
 

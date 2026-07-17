@@ -7,11 +7,20 @@ import androidx.runtime.rknn.data.RknnWorldLandmark
 import androidx.runtime.rknn.internal.NativeTensorOutput
 import kotlin.math.exp
 
-/** 解码 MediaPipe Pose Landmark 的关键点、世界坐标和分割掩码。 */
+/**
+ * Provides the `PoseLandmarkDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `PoseLandmarkDecoder` where its surrounding API requires this contract.
+ */
 internal object PoseLandmarkDecoder {
     private const val MODEL_LANDMARK_COUNT = 39
     private const val OUTPUT_LANDMARK_COUNT = 33
 
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param outputs Native output tensors to decode.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(outputs: List<NativeTensorOutput>, config: RknnModelConfig): DecodedPose {
         val landmarkTensor = outputs.singleOrNull { it.data.size == MODEL_LANDMARK_COUNT * 5 }
             ?: error("Pose landmark tensor [1,195] not found")
@@ -62,10 +71,19 @@ internal object PoseLandmarkDecoder {
     }
 }
 
-/** 解码 MediaPipe Hand Landmark 的关键点、世界坐标、存在分数和左右手。 */
+/**
+ * Provides the `HandLandmarkDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `HandLandmarkDecoder` where its surrounding API requires this contract.
+ */
 internal object HandLandmarkDecoder {
     private const val LANDMARK_COUNT = 21
 
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param outputs Native output tensors to decode.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(outputs: List<NativeTensorOutput>, config: RknnModelConfig): DecodedHand {
         val ordered = outputs.sortedBy(NativeTensorOutput::index)
         val landmarkTensors = ordered.filter { it.data.size == LANDMARK_COUNT * 3 }

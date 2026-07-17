@@ -7,7 +7,11 @@ import androidx.runtime.rknn.RknnModelConfig
 import androidx.runtime.rknn.RknnRawInference
 import androidx.runtime.rknn.data.RknnImage
 
-/** 调用 Rockchip RKNN JNI 的真实桥接实现。 */
+/**
+ * Provides the `RockchipRknnNativeBridge` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RockchipRknnNativeBridge` where its surrounding API requires this contract.
+ */
 internal class RockchipRknnNativeBridge : RknnNativeBridge {
 
     override fun isAvailable(): Boolean = runCatching { RknnJni.nativeIsRuntimeAvailable() }.getOrDefault(false)

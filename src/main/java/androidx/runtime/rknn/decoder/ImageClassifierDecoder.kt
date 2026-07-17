@@ -5,8 +5,17 @@ import androidx.runtime.rknn.data.RknnCategory
 import androidx.runtime.rknn.internal.NativeTensorOutput
 import kotlin.math.exp
 
-/** 将 EfficientNet-Lite 单输出张量解码为按置信度排序的 Top-K 类别。 */
+/**
+ * Provides the `ImageClassifierDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `ImageClassifierDecoder` where its surrounding API requires this contract.
+ */
 internal object ImageClassifierDecoder {
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param output Native output tensor to decode.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(output: NativeTensorOutput, config: RknnModelConfig): List<RknnCategory> {
         require(config.labels.isNotEmpty()) { "Image classifier labels must not be empty" }
         require(output.data.size == config.labels.size) {

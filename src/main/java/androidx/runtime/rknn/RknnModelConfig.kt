@@ -7,7 +7,11 @@ import androidx.runtime.rknn.decoder.EfficientNetLiteModel
 import androidx.runtime.rknn.decoder.HandLandmarkModel
 import androidx.runtime.rknn.decoder.PoseLandmarkModel
 
-/** 注册一个 RKNN 模型所需的完整运行和解码配置。 */
+/**
+ * Provides the `RknnModelConfig` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnModelConfig` where its surrounding API requires this contract.
+ */
 data class RknnModelConfig(
     val id: String,
     val type: RknnModelType,

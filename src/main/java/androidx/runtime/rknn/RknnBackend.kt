@@ -1,6 +1,10 @@
 package androidx.runtime.rknn
 
-/** RKNN 推理使用的硬件后端。 */
+/**
+ * Provides the `RknnBackend` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnBackend` where its surrounding API requires this contract.
+ */
 enum class RknnBackend {
     ROCKCHIP_RKNN,
 }

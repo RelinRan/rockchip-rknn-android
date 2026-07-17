@@ -6,8 +6,18 @@ import androidx.runtime.rknn.data.RknnImage
 import androidx.runtime.rknn.data.RknnKeypoint
 import androidx.runtime.rknn.internal.NativeTensorOutput
 
-/** 解码未执行 NMS 的 YOLO Pose 单张量输出。 */
+/**
+ * Provides the `YoloRawPoseDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `YoloRawPoseDecoder` where its surrounding API requires this contract.
+ */
 internal object YoloRawPoseDecoder {
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param tensor Native tensor containing model output values and dimensions.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(tensor: NativeTensorOutput, image: RknnImage, config: RknnModelConfig): List<RknnDetection> {
         val keyPointChannels = config.poseKeyPointCount * 3
         val withoutObjectness = 4 + config.labels.size + keyPointChannels

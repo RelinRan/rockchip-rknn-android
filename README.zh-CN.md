@@ -31,6 +31,80 @@ src/main/jniLibs/arm64-v8a/librknnrt.so
 src/main/jniLibs/armeabi-v7a/librknnrt.so
 ```
 
+### 使用 Release AAR
+
+从 [Releases](../../releases) 下载 `rockchip-rknn-android-<version>.aar`，放入应用模块的 `libs/`，然后添加：
+
+```kotlin
+dependencies {
+    implementation(files("libs/rockchip-rknn-android-1.0.0.aar"))
+}
+```
+
+AAR 已包含 Kotlin 类、`librknn_jni.so` 和两种 ABI 的 `librknnrt.so`。应用必须保留所需的 `arm64-v8a` 或 `armeabi-v7a` ABI。
+
+### 存储与权限
+
+推荐使用应用私有目录，无需存储权限：
+
+```kotlin
+val modelRoot = File(context.getExternalFilesDir(null), "models").apply { mkdirs() }
+```
+
+历史默认路径 `/storage/emulated/0/AiHandHygiene/model/` 受 Android 分区存储限制。新版本 Android 应使用应用目录，或通过 Storage Access Framework 选择文件后复制到应用目录。本库 Manifest 不声明权限；相机权限与图像采集由应用负责。
+
+## API 选择
+
+| API | 推荐场景 |
+|---|---|
+| `ModelApi` | 多个检测/Pose 模型、摄像头帧、结果流和帧背压 |
+| `RknnRuntime` | 显式注册模型、原始张量、分类、检测和 Landmark |
+| 进程级兼容对象 | 兼容 `RknnApi`、`RknnObjectDetector`、分类和 Landmark 旧调用方式 |
+| `RknnRuntimeSession` | 直接控制 RKNN Context、NPU 核心、动态形状和原生内存 |
+
+新代码优先持有独立的 `ModelApi` 或 `RknnRuntime`，并随 Activity、ViewModel 或 Service 生命周期释放。
+
+## 完整 RknnRuntime 生命周期
+
+```kotlin
+val runtime = RknnRuntime()
+val state = runtime.initialize(
+    context,
+    RknnOptions(modelRoot = modelRoot, debug = BuildConfig.DEBUG),
+)
+check(state == RknnState.READY) { runtime.deviceInfo().reasons.joinToString() }
+
+check(runtime.registerModel(
+    RknnModelConfig(
+        id = "detector",
+        type = RknnModelType.OBJECT_DETECTOR,
+        fileName = "yolo.rknn",
+        inputWidth = 640,
+        inputHeight = 640,
+        labels = listOf("person", "helmet"),
+        decoderType = RknnDecoderType.YOLO_END_TO_END,
+        scoreThreshold = 0.25f,
+        nmsThreshold = 0.5f,
+        maxResults = 100,
+    ),
+))
+
+val result = runtime.detectObjects("detector", bitmap)
+if (result.success) {
+    result.detections.forEach { detection ->
+        val bestCategory = detection.categories.firstOrNull()
+        val sourcePixelBox = detection.boundingBox
+    }
+} else {
+    Log.e("RKNN", result.message.orEmpty())
+}
+
+runtime.unregisterModel("detector")
+runtime.close()
+```
+
+`registerModel()` 会检查文件并立即创建原生 Session。失败状态会被记忆，避免逐帧重试；修复原因后调用 `retryModel(id)`，或注销后重新注册。模型 ID 必须唯一。
+
 ## 模型目录
 
 默认模型目录为：
@@ -154,6 +228,10 @@ Compose 中可以直接使用：
 val poseResult by modelApi.result(poseKey).collectAsState()
 ```
 
+### Bitmap 所有权与并发
+
+`detect()` 同步执行且不会回收 Bitmap。`detectAsync()` 仅在请求被接收时返回 `true`；返回 `false` 时 Bitmap 仍归调用方，应立即复用或回收。异步请求运行期间不可修改已接收的 Bitmap。每个模型拥有独立 busy gate，底层 NPU 调用为保证运行时安全而串行执行。
+
 ### 释放资源
 
 ```kotlin
@@ -213,6 +291,9 @@ normalization = RknnNormalization(
 | `YOLO_CLASSIFY` | YOLO 分类概率或 logits 向量 |
 | `YOLO_OBB` | 中心点、尺寸、类别分数和弧度角旋转框 |
 | `MEDIA_PIPE_SSD` | MediaPipe Model Maker SSD/RetinaNet Box 和 Score 输出 |
+| `MEDIA_PIPE_IMAGE_CLASSIFIER` | EfficientNet-Lite 概率或 logits 输出 |
+| `MEDIA_PIPE_POSE_LANDMARK` | Pose 关键点、世界坐标、存在分数和可选掩码 |
+| `MEDIA_PIPE_HAND_LANDMARK` | Hand 关键点、世界坐标、存在分数和左右手 |
 | `AUTO` | 根据实际输出张量形状自动选择 |
 
 多标签模型通过 `DetectorModel(multiLabel = true)` 开启。每个检测框仍只返回一个
@@ -242,6 +323,50 @@ tracker.reset()
 `maxLostFrames` 后移除；Track 不是模型输出协议，因此不属于 `RknnDecoderType`。
 
 生产环境建议显式设置 `decoderType`。`AUTO` 更适合调试未知模型输出。
+
+### 解码器选择
+
+| 导出模型输出 | 解码器 |
+|---|---|
+| `x1,y1,x2,y2,score,classId` 行 | `YOLO_END_TO_END` |
+| 单个 `4+C` 或 `5+C` Raw 候选张量 | `YOLO_DETECT_RAW` |
+| 分离 DFL 框与分类头 | `YOLO_DETECT_HEADS` |
+| 端到端框与 `K*3` Pose 数据 | `YOLO_POSE_LANDMARK` |
+| Raw Pose 候选 | `YOLO_POSE_RAW` |
+| 分离 DFL 框、分类和关键点头 | `YOLO_POSE_HEADS` |
+| 检测、mask coefficients 和 prototype | `YOLO_SEGMENT` |
+| 分类向量 | `YOLO_CLASSIFY` |
+| 中心点、尺寸、分数和旋转角 | `YOLO_OBB` |
+
+不同导出工具产生的维度可能不同。应打开 debug，根据实际输出名称与维度选择解码器。
+
+## 输入、标签与坐标
+
+- Bitmap 会转换为 RGB，Letterbox 到 `inputWidth x inputHeight`，然后按通道归一化。
+- `inputType=AUTO` 与 `inputLayout=AUTO` 使用张量元数据；仅在模型明确要求时覆盖为 `UINT8`、`INT8`、`FLOAT16`、`FLOAT32`、`NHWC` 或 `NCHW`。
+- 直接配置的 `labels` 优先于 `labelFileName`；标签文件使用 UTF-8，每行一个标签。
+- 检测框和 YOLO 关键点会还原到提交 Bitmap 的像素坐标。
+- MediaPipe Landmark 坐标保持归一化，世界坐标单位为米。
+- 分割掩码保留自己的宽高，可调用 `resize()` 或 `toBinary(threshold)`。
+
+### 读取特殊结果
+
+```kotlin
+val classification = runtime.classifyImage("classifier", bitmap)
+classification.categories.forEach { Log.d("RKNN", "${it.name}: ${it.score}") }
+
+result.detections.forEach { detection ->
+    val binaryMask = detection.segmentationMask?.toBinary(0.5f)
+    val rotatedCorners = detection.orientedBox?.corners
+    val posePoints = detection.keyPoints
+}
+
+// Landmark 接口要求调用方先完成 ROI 裁剪和旋转矫正。
+val pose = runtime.detectPoseLandmarks("pose-landmark", personRoiBitmap)
+val hand = runtime.detectHandLandmarks("hand-landmark", handRoiBitmap)
+```
+
+分类配置可设置 `classifierModel` 和 `classifierScoreType`；Landmark 配置可设置 `poseLandmarkModel` 或 `handLandmarkModel` 来校验输入尺寸。
 
 ### YOLO Pose 结果
 
@@ -325,6 +450,25 @@ runtime.close()
 ```
 
 Session 在 `registerModel()` 时立即创建。首次创建失败后不会逐帧重试，只有重新注册、重置 SDK 或调用 `retryModel()` 才会再次创建。
+
+## 高级原生 Session API
+
+`RknnRuntimeSession` 提供 Context 复制、NPU 核心选择、非阻塞执行、动态输入形状和原生张量内存。该接口面向熟悉 RKNN C API 的调用方；普通图像推理应使用 `RknnRuntime`。
+
+```kotlin
+RknnRuntimeSession.open(File(modelRoot, "model.rknn"), debug = true).use { session ->
+    session.setCoreMask(RknnCoreMask.CORE_0_1_2)
+    session.setInputShape(0, 1, 640, 640, 3)
+    session.createMemory(640L * 640L * 3L).use { memory ->
+        memory.buffer?.apply { clear(); put(rgbBytes) }
+        memory.synchronize(RknnMemorySyncMode.TO_DEVICE)
+        session.setIoMemory(memory, tensorIndex = 0, input = true)
+        session.execute()
+    }
+}
+```
+
+内存对象只属于创建它的 Session。必须先关闭内存再关闭 Session；物理内存使用 direct buffer；非零原生返回码应按 RKNN API 错误处理。
 
 ## 图像分类
 
@@ -427,6 +571,7 @@ decoderType = RknnDecoderType.YOLO_POSE_LANDMARK
 
 ```bash
 ./gradlew testDebugUnitTest
+./gradlew externalNativeBuildRelease
 ./gradlew assembleRelease
 ```
 
@@ -434,10 +579,11 @@ Windows：
 
 ```powershell
 .\gradlew.bat testDebugUnitTest
+.\gradlew.bat externalNativeBuildRelease
 .\gradlew.bat assembleRelease
 ```
 
-Release AAR 生成在 `build/outputs/aar/` 目录中。
+JNI 产物位于 `build/intermediates/cmake/release/obj/<abi>/`，Release AAR 位于 `build/outputs/aar/`。JNI 修改后应同步刷新已提交的 `output/<abi>/librknn_jni.so`。推送与 `VERSION_NAME` 一致的标签后，Action 会发布版本化 AAR 和 SHA-256 校验文件。
 
 ## 自动发布
 

@@ -1,13 +1,21 @@
 package androidx.runtime.rknn.decoder
 
-/** MediaPipe Pose Landmark 的三种精度/性能规格，输出协议完全一致。 */
+/**
+ * Provides the `PoseLandmarkModel` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `PoseLandmarkModel` where its surrounding API requires this contract.
+ */
 enum class PoseLandmarkModel(val inputSize: Int) {
     LITE(256),
     FULL(256),
     HEAVY(256),
 }
 
-/** MediaPipe Hand Landmark 模型规格。 */
+/**
+ * Provides the `HandLandmarkModel` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `HandLandmarkModel` where its surrounding API requires this contract.
+ */
 enum class HandLandmarkModel(val inputSize: Int) {
     FULL(224),
 }

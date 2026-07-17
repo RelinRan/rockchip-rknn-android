@@ -5,8 +5,19 @@ import androidx.runtime.rknn.RknnModelType
 import androidx.runtime.rknn.data.RknnImage
 import androidx.runtime.rknn.internal.NativeTensorOutput
 
-/** 根据显式配置或输出张量形状选择对应的检测结果解码器。 */
+/**
+ * Provides the `RknnDecoderRegistry` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnDecoderRegistry` where its surrounding API requires this contract.
+ */
 internal object RknnDecoderRegistry {
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param type Value supplied for `type`.
+     * @param outputs Native output tensors to decode.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(
         type: RknnDecoderType,
         outputs: List<NativeTensorOutput>,
@@ -64,6 +75,12 @@ internal object RknnDecoderRegistry {
         RknnDecoderType.AUTO -> error("AUTO decoder must be resolved")
     }
 
+    /**
+     * Executes `resolve` for the RKNN runtime contract.
+     * @param requested Value supplied for `requested`.
+     * @param outputs Native output tensors to decode.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun resolve(
         requested: RknnDecoderType,
         outputs: List<NativeTensorOutput>,

@@ -1,6 +1,10 @@
 package androidx.runtime.rknn.model
 
-/** 多模型 SDK 的整体生命周期。 */
+/**
+ * Provides the `MultimodalLifecycle` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `MultimodalLifecycle` where its surrounding API requires this contract.
+ */
 enum class MultimodalLifecycle {
     UNINITIALIZED,
     INITIALIZING,
@@ -10,18 +14,30 @@ enum class MultimodalLifecycle {
     RELEASED,
 }
 
-/** 单个业务模型当前是否启用、是否可执行推理。 */
+/**
+ * Provides the `ModelReadiness` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `ModelReadiness` where its surrounding API requires this contract.
+ */
 data class ModelReadiness(
     val enabled: Boolean = false,
     val ready: Boolean = false,
     val message: String? = null,
 )
 
-/** 三类业务模型的统一状态快照。 */
+/**
+ * Provides the `MultimodalState` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `MultimodalState` where its surrounding API requires this contract.
+ */
 data class MultimodalState(
     val lifecycle: MultimodalLifecycle = MultimodalLifecycle.UNINITIALIZED,
     val models: Map<ModelKey, ModelReadiness> = emptyMap(),
     val messages: List<String> = emptyList(),
 ) {
+    /**
+     * Executes `readiness` for the RKNN runtime contract.
+     * @param key Stable key identifying a configured model.
+     */
     fun readiness(key: ModelKey): ModelReadiness = models[key] ?: ModelReadiness()
 }

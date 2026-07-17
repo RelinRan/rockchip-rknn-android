@@ -7,10 +7,20 @@ import androidx.runtime.rknn.data.RknnDetection
 import androidx.runtime.rknn.data.RknnImage
 import androidx.runtime.rknn.internal.NativeTensorOutput
 
-/** 解码 Ultralytics 通道优先的原始输出：[1, 4 + 类别数, 锚框数]。 */
+/**
+ * Provides the `RawYoloDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RawYoloDecoder` where its surrounding API requires this contract.
+ */
 internal object RawYoloDecoder {
     private const val NMS_THRESHOLD = 0.5f
 
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param tensor Native tensor containing model output values and dimensions.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(tensor: NativeTensorOutput, image: RknnImage, config: RknnModelConfig): List<RknnDetection> {
         val withoutObjectness = config.labels.size + 4
         val withObjectness = config.labels.size + 5

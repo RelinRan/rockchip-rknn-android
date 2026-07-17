@@ -1,6 +1,10 @@
 package androidx.runtime.rknn.decoder
 
-/** RKNN 检测模型输出的解码格式。 */
+/**
+ * Provides the `RknnDecoderType` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnDecoderType` where its surrounding API requires this contract.
+ */
 enum class RknnDecoderType {
     AUTO,
     YOLO_END_TO_END,

@@ -1,6 +1,10 @@
 package androidx.runtime.rknn.data
 
-/** 图像坐标关键点；x、y、z 均按模型输入尺寸归一化。 */
+/**
+ * Provides the `RknnLandmark` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnLandmark` where its surrounding API requires this contract.
+ */
 data class RknnLandmark(
     val x: Float,
     val y: Float,
@@ -9,7 +13,11 @@ data class RknnLandmark(
     val presence: Float = 1f,
 )
 
-/** 以米为单位的三维世界坐标关键点。 */
+/**
+ * Provides the `RknnWorldLandmark` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnWorldLandmark` where its surrounding API requires this contract.
+ */
 data class RknnWorldLandmark(
     val x: Float,
     val y: Float,

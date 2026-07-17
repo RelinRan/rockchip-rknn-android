@@ -1,6 +1,10 @@
 package androidx.runtime.rknn.decoder
 
-/** MediaPipe Image Classifier 提供的 EfficientNet-Lite 模型规格。 */
+/**
+ * Provides the `EfficientNetLiteModel` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `EfficientNetLiteModel` where its surrounding API requires this contract.
+ */
 enum class EfficientNetLiteModel(
     val inputSize: Int,
     val quantized: Boolean,
@@ -11,12 +15,16 @@ enum class EfficientNetLiteModel(
     LITE2_INT8(224, true),
 }
 
-/** 分类输出张量中分数的含义。 */
+/**
+ * Provides the `ClassificationScoreType` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `ClassificationScoreType` where its surrounding API requires this contract.
+ */
 enum class ClassificationScoreType {
-    /** 根据数值范围和总和自动判断概率或 logits。 */
+    /** Infers whether values are probabilities or logits from their range and sum. */
     AUTO,
-    /** 输出已经过 Softmax，可直接作为概率使用。 */
+    /** Values have already passed through Softmax and can be used as probabilities. */
     PROBABILITIES,
-    /** 输出是 logits，需要先执行 Softmax。 */
+    /** Values are logits and require Softmax before thresholding. */
     LOGITS,
 }

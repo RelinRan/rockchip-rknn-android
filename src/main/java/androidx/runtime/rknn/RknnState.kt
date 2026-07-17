@@ -1,6 +1,10 @@
 package androidx.runtime.rknn
 
-/** RKNN 运行时生命周期状态。 */
+/**
+ * Provides the `RknnState` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnState` where its surrounding API requires this contract.
+ */
 enum class RknnState {
     UNINITIALIZED,
     READY,

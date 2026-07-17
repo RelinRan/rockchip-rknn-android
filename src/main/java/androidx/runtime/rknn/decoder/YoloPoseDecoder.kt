@@ -8,8 +8,18 @@ import androidx.runtime.rknn.internal.NativeTensorOutput
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** 解码 YOLO Pose 端到端输出：框、置信度、类别和关键点。 */
+/**
+ * Provides the `YoloPoseDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `YoloPoseDecoder` where its surrounding API requires this contract.
+ */
 internal object YoloPoseDecoder {
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param tensor Native tensor containing model output values and dimensions.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(tensor: NativeTensorOutput, image: RknnImage, config: RknnModelConfig): List<RknnDetection> {
         val valuesPerRow = 6 + config.poseKeyPointCount * 3
         val view = YoloTensorView.create(tensor, setOf(valuesPerRow))
@@ -48,5 +58,9 @@ internal object YoloPoseNames {
         "left_knee", "right_knee", "left_ankle", "right_ankle",
     )
 
+    /**
+     * Executes `name` for the RKNN runtime contract.
+     * @param index Value supplied for `index`.
+     */
     fun name(index: Int): String = coco.getOrNull(index) ?: "key_point_$index"
 }

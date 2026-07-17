@@ -7,9 +7,19 @@ import android.graphics.Paint
 import androidx.runtime.rknn.data.RknnImage
 import kotlin.math.roundToInt
 
-/** 将 Bitmap 等比缩放并填充为模型要求的 RGB 输入。 */
+/**
+ * Provides the `ImagePreprocessor` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `ImagePreprocessor` where its surrounding API requires this contract.
+ */
 internal object ImagePreprocessor {
 
+    /**
+     * Executes `toRgbImage` for the RKNN runtime contract.
+     * @param bitmap Source bitmap to preprocess and run through the model.
+     * @param targetWidth Requested output width in pixels.
+     * @param targetHeight Requested output height in pixels.
+     */
     fun toRgbImage(bitmap: Bitmap, targetWidth: Int, targetHeight: Int): RknnImage {
         require(targetWidth > 0 && targetHeight > 0) { "Invalid model input size" }
         val scale = minOf(targetWidth.toFloat() / bitmap.width, targetHeight.toFloat() / bitmap.height)

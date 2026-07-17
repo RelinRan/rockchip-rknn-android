@@ -1,6 +1,10 @@
 package androidx.runtime.rknn.data
 
-/** 预处理后的 RGB 图像数据以及恢复原图坐标所需的缩放信息。 */
+/**
+ * Provides the `RknnImage` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnImage` where its surrounding API requires this contract.
+ */
 data class RknnImage(
     val width: Int,
     val height: Int,

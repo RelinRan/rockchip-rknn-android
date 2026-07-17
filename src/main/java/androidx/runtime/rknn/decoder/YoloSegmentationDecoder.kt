@@ -7,8 +7,18 @@ import androidx.runtime.rknn.data.RknnSegmentationMask
 import androidx.runtime.rknn.internal.NativeTensorOutput
 import kotlin.math.exp
 
-/** 解码 YOLO 实例分割的检测张量和 prototype 张量。 */
+/**
+ * Provides the `YoloSegmentationDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `YoloSegmentationDecoder` where its surrounding API requires this contract.
+ */
 internal object YoloSegmentationDecoder {
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param outputs Native output tensors to decode.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(
         outputs: List<NativeTensorOutput>,
         image: RknnImage,
@@ -57,6 +67,16 @@ internal object YoloSegmentationDecoder {
         val width: Int,
         private val channelFirst: Boolean,
     ) {
+        /**
+         * Executes `combine` for the RKNN runtime contract.
+         * @param coefficients Value supplied for `coefficients`.
+         * @param left Value supplied for `left`.
+         * @param top Value supplied for `top`.
+         * @param right Value supplied for `right`.
+         * @param bottom Value supplied for `bottom`.
+         * @param inputWidth Value supplied for `inputWidth`.
+         * @param inputHeight Value supplied for `inputHeight`.
+         */
         fun combine(
             coefficients: FloatArray,
             left: Float,
@@ -91,6 +111,10 @@ internal object YoloSegmentationDecoder {
         }
 
         companion object {
+            /**
+             * Executes `create` for the RKNN runtime contract.
+             * @param tensor Native tensor containing model output values and dimensions.
+             */
             fun create(tensor: NativeTensorOutput): Prototype {
                 val dims = tensor.dims
                 require(dims.size == 4 && dims[0] == 1) { "Invalid prototype dimensions: ${dims.contentToString()}" }

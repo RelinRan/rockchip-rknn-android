@@ -5,7 +5,11 @@ import kotlin.math.sin
 
 data class RknnPoint(val x: Float, val y: Float)
 
-/** 以中心点、尺寸和弧度角表示的旋转边界框。 */
+/**
+ * Provides the `RknnOrientedBox` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnOrientedBox` where its surrounding API requires this contract.
+ */
 data class RknnOrientedBox(
     val centerX: Float,
     val centerY: Float,
@@ -30,6 +34,9 @@ data class RknnOrientedBox(
         }
     }
 
+    /**
+     * Executes `boundingBox` for the RKNN runtime contract.
+     */
     fun boundingBox(): RknnBoundingBox = RknnBoundingBox(
         corners.minOf { it.x }, corners.minOf { it.y },
         corners.maxOf { it.x }, corners.maxOf { it.y },

@@ -6,8 +6,18 @@ import androidx.runtime.rknn.data.RknnImage
 import androidx.runtime.rknn.data.RknnOrientedBox
 import androidx.runtime.rknn.internal.NativeTensorOutput
 
-/** 解码 YOLO OBB 的中心点、尺寸、类别分数和弧度角。 */
+/**
+ * Provides the `YoloObbDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `YoloObbDecoder` where its surrounding API requires this contract.
+ */
 internal object YoloObbDecoder {
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param output Native output tensor to decode.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(output: NativeTensorOutput, image: RknnImage, config: RknnModelConfig): List<RknnDetection> {
         val channels = 5 + config.labels.size
         val view = YoloTensorView.create(output, setOf(channels))

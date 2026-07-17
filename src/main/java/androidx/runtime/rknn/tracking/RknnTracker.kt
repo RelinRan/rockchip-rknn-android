@@ -3,7 +3,11 @@ package androidx.runtime.rknn.tracking
 import androidx.runtime.rknn.data.RknnBoundingBox
 import androidx.runtime.rknn.data.RknnDetection
 
-/** ByteTrack 风格的高低置信度二阶段目标跟踪器。 */
+/**
+ * Provides the `RknnTracker` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnTracker` where its surrounding API requires this contract.
+ */
 class RknnTracker(private val config: RknnTrackerConfig = RknnTrackerConfig()) {
     private data class Track(
         val id: Long,
@@ -20,6 +24,10 @@ class RknnTracker(private val config: RknnTrackerConfig = RknnTrackerConfig()) {
     private var nextId = 1L
 
     @Synchronized
+    /**
+     * Executes `update` for the RKNN runtime contract.
+     * @param detections Decoded detections for the current frame.
+     */
     fun update(detections: List<RknnDetection>): List<RknnTrackedDetection> {
         tracks.forEach { it.age++ }
         val high = detections.filter { score(it) >= config.highScoreThreshold }.toMutableList()
@@ -45,6 +53,9 @@ class RknnTracker(private val config: RknnTrackerConfig = RknnTrackerConfig()) {
     }
 
     @Synchronized
+    /**
+     * Executes `reset` for the RKNN runtime contract.
+     */
     fun reset() {
         tracks.clear()
         nextId = 1L

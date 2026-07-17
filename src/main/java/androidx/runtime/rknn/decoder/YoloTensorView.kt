@@ -2,7 +2,11 @@ package androidx.runtime.rknn.decoder
 
 import androidx.runtime.rknn.internal.NativeTensorOutput
 
-/** 将 YOLO 的候选优先或通道优先张量统一为按候选行读取的只读视图。 */
+/**
+ * Provides the `YoloTensorView` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `YoloTensorView` where its surrounding API requires this contract.
+ */
 internal class YoloTensorView private constructor(
     private val tensor: NativeTensorOutput,
     val rows: Int,
@@ -17,6 +21,11 @@ internal class YoloTensorView private constructor(
     }
 
     companion object {
+        /**
+         * Executes `create` for the RKNN runtime contract.
+         * @param tensor Native tensor containing model output values and dimensions.
+         * @param expectedChannels Value supplied for `expectedChannels`.
+         */
         fun create(
             tensor: NativeTensorOutput,
             expectedChannels: Set<Int>,

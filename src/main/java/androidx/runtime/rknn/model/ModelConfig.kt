@@ -7,7 +7,11 @@ import androidx.runtime.rknn.RknnModelType
 import androidx.runtime.rknn.decoder.MediaPipeObjectDetectorModel
 import androidx.runtime.rknn.decoder.RknnDecoderType
 
-/** 单个检测模型的文件、输入、阈值和解码配置。 */
+/**
+ * Provides the `DetectorModel` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `DetectorModel` where its surrounding API requires this contract.
+ */
 data class DetectorModel(
     val enabled: Boolean = true,
     val fileName: String,
@@ -37,7 +41,11 @@ data class DetectorModel(
     }
 }
 
-/** 多人手卫生场景使用的三类模型配置。 */
+/**
+ * Provides the `ModelExecutionMode` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `ModelExecutionMode` where its surrounding API requires this contract.
+ */
 enum class ModelExecutionMode {
     SERIAL,
     PARALLEL,
@@ -53,7 +61,11 @@ data class ModelConfig(
     }
 }
 
-/** 可扩展的模型标识，可使用预置值，也可以通过构造函数创建业务自定义标识。 */
+/**
+ * Provides the `ModelKey` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `ModelKey` where its surrounding API requires this contract.
+ */
 @JvmInline
 value class ModelKey(val value: String) {
     init {

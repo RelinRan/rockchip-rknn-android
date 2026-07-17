@@ -8,8 +8,18 @@ import androidx.runtime.rknn.internal.NativeTensorOutput
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** 解码 YOLO26 端到端导出格式：[x1, y1, x2, y2, 置信度, 类别编号]。 */
+/**
+ * Provides the `Yolo26Decoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `Yolo26Decoder` where its surrounding API requires this contract.
+ */
 internal object Yolo26Decoder {
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param tensor Native tensor containing model output values and dimensions.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(tensor: NativeTensorOutput, image: androidx.runtime.rknn.data.RknnImage, config: RknnModelConfig): List<RknnDetection> {
         val view = YoloTensorView.create(tensor, setOf(6))
         val candidates = ArrayList<YoloCandidate>(view.rows)

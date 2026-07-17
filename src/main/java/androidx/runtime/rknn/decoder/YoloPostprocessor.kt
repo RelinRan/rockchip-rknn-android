@@ -11,7 +11,11 @@ import androidx.runtime.rknn.data.RknnOrientedBox
 import androidx.runtime.rknn.data.RknnPoint
 import kotlin.math.abs
 
-/** YOLO 解码后的统一候选，坐标仍位于模型输入空间。 */
+/**
+ * Provides the `YoloCandidate` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `YoloCandidate` where its surrounding API requires this contract.
+ */
 internal data class YoloCandidate(
     val left: Float,
     val top: Float,
@@ -25,8 +29,19 @@ internal data class YoloCandidate(
     val orientedBox: RknnOrientedBox? = null,
 )
 
-/** 统一执行 YOLO 坐标还原、NMS、排序和结果数量限制。 */
+/**
+ * Provides the `YoloPostprocessor` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `YoloPostprocessor` where its surrounding API requires this contract.
+ */
 internal object YoloPostprocessor {
+    /**
+     * Executes `process` for the RKNN runtime contract.
+     * @param candidates Value supplied for `candidates`.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     * @param applyNms Value supplied for `applyNms`.
+     */
     fun process(
         candidates: List<YoloCandidate>,
         image: RknnImage,

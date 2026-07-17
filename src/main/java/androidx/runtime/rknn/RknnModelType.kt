@@ -1,6 +1,10 @@
 package androidx.runtime.rknn
 
-/** 模型的业务用途，用于区分不同推理结果。 */
+/**
+ * Provides the `RknnModelType` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnModelType` where its surrounding API requires this contract.
+ */
 enum class RknnModelType {
     OBJECT_DETECTOR,
     IMAGE_CLASSIFIER,

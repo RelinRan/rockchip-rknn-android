@@ -2,7 +2,11 @@ package androidx.runtime.rknn.data
 
 import androidx.runtime.rknn.RknnBackend
 
-/** Pose Landmark 解码结果。 */
+/**
+ * Provides the `RknnPoseLandmarkResult` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnPoseLandmarkResult` where its surrounding API requires this contract.
+ */
 data class RknnPoseLandmarkResult(
     val success: Boolean,
     val backend: RknnBackend,
@@ -17,7 +21,11 @@ data class RknnPoseLandmarkResult(
     val message: String? = null,
 )
 
-/** Hand Landmark 解码结果。 */
+/**
+ * Provides the `RknnHandLandmarkResult` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `RknnHandLandmarkResult` where its surrounding API requires this contract.
+ */
 data class RknnHandLandmarkResult(
     val success: Boolean,
     val backend: RknnBackend,

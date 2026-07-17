@@ -6,8 +6,18 @@ import androidx.runtime.rknn.data.RknnImage
 import androidx.runtime.rknn.internal.NativeTensorOutput
 import kotlin.math.exp
 
-/** 解码 YOLOv8 及后续版本常见的 DFL 合并或分离检测头。 */
+/**
+ * Provides the `YoloDflDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `YoloDflDecoder` where its surrounding API requires this contract.
+ */
 internal object YoloDflDecoder {
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param outputs Native output tensors to decode.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(
         outputs: List<NativeTensorOutput>,
         image: RknnImage,
@@ -104,6 +114,11 @@ internal object YoloDflDecoder {
         }
 
         companion object {
+            /**
+             * Executes `create` for the RKNN runtime contract.
+             * @param tensor Native tensor containing model output values and dimensions.
+             * @param classes Value supplied for `classes`.
+             */
             fun create(tensor: NativeTensorOutput, classes: Int): GridTensor {
                 val dims = tensor.dims.toList()
                 require(dims.size == 4 && dims[0] == 1) {

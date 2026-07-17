@@ -7,8 +7,18 @@ import androidx.runtime.rknn.data.RknnKeypoint
 import androidx.runtime.rknn.internal.NativeTensorOutput
 import kotlin.math.exp
 
-/** 解码分离的 YOLO DFL 框、分类和 Pose 关键点检测头。 */
+/**
+ * Provides the `YoloPoseHeadsDecoder` contract used by the RKNN Android runtime.
+ *
+ * Usage: create or reference `YoloPoseHeadsDecoder` where its surrounding API requires this contract.
+ */
 internal object YoloPoseHeadsDecoder {
+    /**
+     * Executes `decode` for the RKNN runtime contract.
+     * @param outputs Native output tensors to decode.
+     * @param image Preprocessed image and coordinate-transform metadata.
+     * @param config Model or runtime configuration used by the operation.
+     */
     fun decode(outputs: List<NativeTensorOutput>, image: RknnImage, config: RknnModelConfig): List<RknnDetection> {
         val heads = outputs.map(Head::create)
         val poseChannels = config.poseKeyPointCount * 3
@@ -94,9 +104,17 @@ internal object YoloPoseHeadsDecoder {
             else (y * width + x) * channels + channel
             return tensor.data[index]
         }
+        /**
+         * Executes `sameGrid` for the RKNN runtime contract.
+         * @param other Value supplied for `other`.
+         */
         fun sameGrid(other: Head) = width == other.width && height == other.height
 
         companion object {
+            /**
+             * Executes `create` for the RKNN runtime contract.
+             * @param tensor Native tensor containing model output values and dimensions.
+             */
             fun create(tensor: NativeTensorOutput): Head {
                 val dims = tensor.dims
                 require(dims.size == 4 && dims[0] == 1) { "Pose head must be rank-4: ${tensor.name}" }

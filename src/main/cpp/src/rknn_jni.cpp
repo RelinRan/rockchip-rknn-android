@@ -19,7 +19,7 @@
 
 namespace {
 
-// 运行时动态加载的 RKNN API，允许在不支持 RKNN 的设备上安全探测能力。
+// RKNN symbols are loaded at runtime so capability checks remain safe on unsupported devices.
 struct RknnApi {
     void* handle = nullptr;
     int (*init)(rknn_context*, void*, uint32_t, uint32_t, rknn_init_extend*) = nullptr;
@@ -48,7 +48,7 @@ struct RknnApi {
     bool loaded = false;
 };
 
-// 每个句柄独立持有 Context、张量属性以及跨帧复用的输入输出缓冲区。
+// Each handle owns its context, tensor metadata, and reusable cross-frame I/O buffers.
 struct Session {
     rknn_context ctx = 0;
     rknn_input_output_num io_num{};
@@ -92,7 +92,7 @@ void log_tensor_attr(const char* direction, const rknn_tensor_attr& attr) {
     );
 }
 
-// 必选符号缺失意味着当前 librknnrt.so 无法提供基础推理能力。
+// Missing required symbols means this librknnrt.so cannot provide basic inference.
 bool load_symbol(void** target, const char* name) {
     dlerror();
     *target = dlsym(g_api.handle, name);
@@ -104,7 +104,7 @@ bool load_symbol(void** target, const char* name) {
     return true;
 }
 
-// 可选符号用于扩展 API，旧版 Runtime 缺失时不影响基础推理。
+// Optional symbols expose extended APIs without breaking basic inference on older runtimes.
 void load_optional_symbol(void** target, const char* name) {
     dlerror();
     *target = dlsym(g_api.handle, name);

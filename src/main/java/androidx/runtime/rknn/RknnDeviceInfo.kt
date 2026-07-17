@@ -1,6 +1,14 @@
 package androidx.runtime.rknn
 
-/** 设备的 RKNN 支持状态以及探测过程中得到的原因。 */
+/**
+ * Snapshot of RKNN capability discovery for the current device.
+ *
+ * Obtain it with `runtime.deviceInfo()` after initialization.
+ *
+ * @property backend Backend that was probed.
+ * @property supported Whether the required runtime and device nodes are available.
+ * @property reasons Human-readable discovery failures; empty when fully supported.
+ */
 data class RknnDeviceInfo(
     val backend: RknnBackend,
     val supported: Boolean,
