@@ -32,7 +32,7 @@ Download `rockchip-rknn-android-<version>.aar` from [Releases](../../releases), 
 
 ```kotlin
 dependencies {
-    implementation(files("libs/rockchip-rknn-android-1.0.0.aar"))
+    implementation(files("libs/rockchip-rknn-android-1.1.0.aar"))
 }
 ```
 
@@ -139,6 +139,7 @@ val config = ModelConfig(
             scoreThreshold = 0.25f,
         ),
     ),
+    runMode = RunMode.PARALLEL,
 )
 
 val modelApi = ModelApi()
@@ -171,20 +172,55 @@ if (!accepted) {
 }
 ```
 
-Different models have independent busy locks, while NPU inference is currently serialized by a runtime-wide lock.
+`RunMode.SERIAL` (the default) uses one shared runtime lock. `RunMode.PARALLEL` allows different
+models with independent RKNN sessions to run concurrently; requests for the same model are still
+serialized and `detectAsync()` still rejects frames while that model is busy. The former
+`ModelExecutionMode` and `executionMode` names were replaced by `RunMode` and `runMode` in 1.1.0.
 
 ### Observing results
 
 ```kotlin
-val actionResult: StateFlow<RknnObjectDetectionResult?> = modelApi.result(actionKey)
-val poseResult: StateFlow<RknnObjectDetectionResult?> = modelApi.result(poseKey)
+val actionResult: StateFlow<ModelResult?> = modelApi.result(actionKey)
+val poseResult: StateFlow<ModelResult?> = modelApi.result(poseKey)
 ```
 
 In Compose, use `modelApi.result(poseKey).collectAsState()`.
 
 ### Bitmap ownership and concurrency
 
-`detect()` is synchronous and never recycles the Bitmap. `detectAsync()` returns `true` only when the request is accepted. When it returns `false`, the caller still owns the Bitmap and should recycle or reuse it. Do not mutate an accepted Bitmap until inference finishes. Each model has an independent busy gate, while native NPU execution is serialized for runtime safety.
+`detect()` is synchronous and never recycles the Bitmap. `detectAsync()` returns `true` only when the request is accepted. When it returns `false`, the caller still owns the Bitmap and should recycle or reuse it. Do not mutate an accepted Bitmap until inference finishes. `resultSequence` increases for every published result and can be used to distinguish repeated result values.
+
+## OSNet x0.25 ReID Embeddings
+
+ReID models consume a cropped person ROI and return an L2-normalized feature vector. They do not
+need labels or an object-detection decoder.
+
+```kotlin
+val reidKey = ModelKey.REID
+val reidModel = DetectorModel(
+    fileName = "osnet_x0_25_msmt17_256x128_rk3588_fp16.rknn",
+    inputWidth = 128,
+    inputHeight = 256,
+    normalization = RknnNormalization(
+        mean = floatArrayOf(123.675f, 116.280f, 103.530f),
+        std = floatArrayOf(58.395f, 57.120f, 57.375f),
+    ),
+    modelType = RknnModelType.REID_EMBEDDING,
+    embeddingSize = 512,
+)
+
+when (val result = modelApi.detect(reidKey, personBitmap)) {
+    is RknnEmbeddingResult -> if (result.success) {
+        val embedding: FloatArray = result.embedding
+    }
+    is RknnObjectDetectionResult -> Unit
+    is ModelFailureResult -> Log.e("RKNN", result.message.orEmpty())
+}
+```
+
+`ModelApi.detect()` and `result(key)` use the common `ModelResult` contract. Object and pose models
+produce `RknnObjectDetectionResult`; ReID models produce `RknnEmbeddingResult`; failures that do
+not have a model-specific result use `ModelFailureResult`.
 
 ## DetectorModel Configuration
 
@@ -205,6 +241,7 @@ In Compose, use `modelApi.result(poseKey).collectAsState()`.
 | `decoderType` | Model output decoder; set this explicitly in production |
 | `mediaPipeModel` | MediaPipe SSD model specification |
 | `modelType` | Business-level model type |
+| `embeddingSize` | Expected ReID feature-vector length; default `512` |
 
 The default normalization is `(pixel - mean) / std`, with `mean = [0, 0, 0]` and `std = [255, 255, 255]`. If the model graph already performs `/255`, use:
 
@@ -311,12 +348,35 @@ DetectorModel(
 `RknnTracker` applies two-stage high/low-confidence association to detections across frames:
 
 ```kotlin
-val tracker = RknnTracker(RknnTrackerConfig())
+val tracker = RknnTracker(
+    RknnTrackerConfig(
+        singleTargetRecovery = true,
+        reIdEnabled = true,
+        reIdSimilarityThreshold = 0.75f,
+        reIdWeight = 0.75f,
+        reIdMomentum = 0.9f,
+        duplicateIouThreshold = 0.7f,
+    ),
+)
 val tracked = tracker.update(detectionResult.detections)
 tracker.reset()
 ```
 
-Temporarily unmatched tracks remain in the `LOST` state and are removed after `maxLostFrames`. Tracking is independent from model output decoding and is therefore not a `RknnDecoderType`.
+Pass embeddings aligned with their detections when ReID is enabled:
+
+```kotlin
+val tracked = tracker.updateInputs(
+    detections.mapIndexed { index, detection ->
+        RknnTrackingInput(detection, embeddings[index])
+    },
+)
+```
+
+Temporarily unmatched tracks remain in the `LOST` state and are removed after `maxLostFrames`.
+`singleTargetRecovery` reconnects the only viable lost track, and `duplicateIouThreshold` suppresses
+overlapping duplicate detections before association. Missing embeddings automatically fall back to
+motion and geometry matching. Tracking is independent from model output decoding and is therefore
+not a `RknnDecoderType`.
 
 ## Low-level RknnRuntime
 
@@ -413,7 +473,7 @@ Check for duplicate `/255` normalization, RGB/BGR ordering, input dimensions, FP
 ./gradlew assembleRelease
 ```
 
-JNI outputs are generated below `build/intermediates/cmake/release/obj/<abi>/`; the AAR is generated under `build/outputs/aar/`. Refresh checked-in `output/<abi>/librknn_jni.so` after JNI changes. Pushing a tag matching `VERSION_NAME`, such as `v1.0.0`, runs tests and publishes the versioned AAR plus SHA-256 checksum.
+JNI outputs are generated below `build/intermediates/cmake/release/obj/<abi>/`; the AAR is generated under `build/outputs/aar/`. Refresh checked-in `output/<abi>/librknn_jni.so` after JNI changes. Pushing a tag matching `VERSION_NAME`, such as `v1.1.0`, runs tests and publishes the versioned AAR plus SHA-256 checksum.
 
 ## Related Projects
 

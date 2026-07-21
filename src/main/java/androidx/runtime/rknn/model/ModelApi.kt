@@ -4,13 +4,18 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.Environment
 import androidx.runtime.rknn.RknnBackend
+import androidx.runtime.rknn.ModelFailureResult
+import androidx.runtime.rknn.ModelResult
+import androidx.runtime.rknn.RknnEmbeddingResult
 import androidx.runtime.rknn.RknnModelConfig
+import androidx.runtime.rknn.RknnModelType
 import androidx.runtime.rknn.RknnOptions
 import androidx.runtime.rknn.RknnState
 import androidx.runtime.rknn.data.RknnObjectDetectionResult
 import java.io.Closeable
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,9 +29,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
 /**
- * Provides the `ModelApi` contract used by the RKNN Android runtime.
+ * Coroutine-based facade for configuring and running multiple RKNN models.
  *
- * Usage: create or reference `ModelApi` where its surrounding API requires this contract.
+ * Each model accepts at most one asynchronous request at a time, preventing camera frames from
+ * accumulating while inference is busy. Observe [state] and [result] from Kotlin or Compose.
+ *
+ * Example:
+ * ```kotlin
+ * val api = ModelApi()
+ * api.initialize(context, modelRoot, ModelConfig(mapOf(ModelKey.ACTION to actionModel)))
+ * val accepted = api.detectAsync(ModelKey.ACTION, bitmap)
+ * val results = api.result(ModelKey.ACTION)
+ * api.close()
+ * ```
  */
 class ModelApi internal constructor(
     private val runtime: ModelRuntime,
@@ -34,9 +49,11 @@ class ModelApi internal constructor(
 ) : Closeable {
     constructor() : this(DefaultModelRuntime())
 
-    private val resultFlows = ConcurrentHashMap<ModelKey, MutableStateFlow<RknnObjectDetectionResult?>>()
+    private val resultFlows = ConcurrentHashMap<ModelKey, MutableStateFlow<ModelResult?>>()
+    private val resultSequence = AtomicLong(0L)
     private val _state = MutableStateFlow(MultimodalState())
 
+    /** Current initialization and per-model readiness state. */
     val state: StateFlow<MultimodalState> = _state.asStateFlow()
 
     private val runtimeLock = Any()
@@ -44,14 +61,18 @@ class ModelApi internal constructor(
     private val busy = ConcurrentHashMap<ModelKey, Mutex>()
     private val modelExecutionLocks = ConcurrentHashMap<ModelKey, Any>()
     @Volatile
-    private var executionMode = ModelExecutionMode.SERIAL
+    private var runMode = RunMode.SERIAL
     private var scope: CoroutineScope? = null
 
     /**
-     * Executes `initialize` for the RKNN runtime contract.
-     * @param context Android context used to access storage and native resources.
-     * @param modelRoot Value supplied for `modelRoot`.
-     * @param config Model or runtime configuration used by the operation.
+     * Initializes the runtime and registers enabled models from an explicit directory.
+     *
+     * Calling this method again releases all existing model sessions first.
+     *
+     * @param context Android context used to load native libraries and inspect the device.
+     * @param modelRoot Directory containing RKNN model and label files.
+     * @param config Models, diagnostics, and execution policy to apply.
+     * @return Initialization snapshot, including readiness for every configured model.
      */
     fun initialize(context: Context, modelRoot: File, config: ModelConfig): MultimodalState {
         releaseResources()
@@ -63,11 +84,13 @@ class ModelApi internal constructor(
     }
 
     /**
-     * Executes `initialize` for the RKNN runtime contract.
-     * @param context Android context used to access storage and native resources.
-     * @param project Value supplied for `project`.
-     * @param modelDir Value supplied for `modelDir`.
-     * @param config Model or runtime configuration used by the operation.
+     * Initializes models below the shared external-storage directory.
+     *
+     * @param context Android context used by the RKNN runtime.
+     * @param project Project directory below external storage.
+     * @param modelDir Model directory below [project].
+     * @param config Models and execution policy to apply.
+     * @return Initialization snapshot for all configured models.
      */
     fun initialize(
         context: Context,
@@ -79,19 +102,13 @@ class ModelApi internal constructor(
         return initialize(context, root, config)
     }
 
-    /**
-     * Executes `initializeModelRoot` for the RKNN runtime contract.
-     * @param modelRoot Value supplied for `modelRoot`.
-     * @param config Model or runtime configuration used by the operation.
-     * @param runtimeState Value supplied for `runtimeState`.
-     */
     internal fun initializeModelRoot(
         modelRoot: File,
         config: ModelConfig,
         runtimeState: RknnState,
     ): MultimodalState {
         _state.value = MultimodalState(lifecycle = MultimodalLifecycle.INITIALIZING)
-        executionMode = config.executionMode
+        runMode = config.runMode
         scope = CoroutineScope(SupervisorJob() + inferenceDispatcher)
 
         val modelConfigs = config.models
@@ -118,7 +135,8 @@ class ModelApi internal constructor(
             val labels = resolveLabels(modelRoot, detector)
             val error = when {
                 !modelFile.isFile -> "${key.value} model missing: ${detector.fileName}"
-                labels.isEmpty() -> "${key.value} labels missing or empty"
+                requiresLabels(detector.modelType) && labels.isEmpty() ->
+                    "${key.value} labels missing or empty"
                 else -> null
             }
             if (error != null) {
@@ -138,6 +156,7 @@ class ModelApi internal constructor(
                 maxResults = detector.maxResults,
                 poseKeyPointCount = detector.poseKeyPointCount,
                 multiLabel = detector.multiLabel,
+                embeddingSize = detector.embeddingSize,
                 inputType = detector.inputType,
                 inputLayout = detector.inputLayout,
                 normalization = detector.normalization,
@@ -165,42 +184,59 @@ class ModelApi internal constructor(
         return publishInitializationState(modelConfigs, readiness, emptyMap(), lifecycle, messages)
     }
 
-    /** Returns the result stream for [key]; custom keys may be observed before initialization. */
     /**
-     * Executes `result` for the RKNN runtime contract.
-     * @param key Stable key identifying a configured model.
+     * Returns the latest result stream for [key]. Custom keys may be observed before initialization.
+     *
+     * @param key Model whose results should be observed.
+     * @return Read-only state flow whose initial value is `null`.
      */
-    fun result(key: ModelKey): StateFlow<RknnObjectDetectionResult?> = resultFlow(key).asStateFlow()
+    fun result(key: ModelKey): StateFlow<ModelResult?> = resultFlow(key).asStateFlow()
 
     /**
-     * Executes `detect` for the RKNN runtime contract.
-     * @param key Stable key identifying a configured model.
-     * @param bitmap Source bitmap to preprocess and run through the model.
+     * Runs synchronous inference and returns the result type declared by the model configuration.
+     *
+     * @param key Registered model identifier.
+     * @param bitmap Source image. Ownership remains with the caller.
+     * @return Detection, embedding, or failure result with `success == false` on failure.
      */
-    fun detect(key: ModelKey, bitmap: Bitmap): RknnObjectDetectionResult =
-        executeDetection(key) { runtime.detectObjects(key.value, bitmap) }
+    fun detect(key: ModelKey, bitmap: Bitmap): ModelResult =
+        execute(key) { runConfiguredModel(key, bitmap) }
 
     /**
-     * Executes `detectAsync` for the RKNN runtime contract.
-     * @param key Stable key identifying a configured model.
-     * @param bitmap Source bitmap to preprocess and run through the model.
+     * Schedules model inference without blocking the caller.
+     *
+     * @param key Registered model identifier.
+     * @param bitmap Source image. Keep it valid until the result is published.
+     * @return `true` when accepted, or `false` when unavailable or already busy.
      */
     fun detectAsync(key: ModelKey, bitmap: Bitmap): Boolean =
-        executeDetectionAsync(key) { runtime.detectObjects(key.value, bitmap) }
+        executeAsync(key) { runConfiguredModel(key, bitmap) }
 
-    /**
-     * Executes `executeDetection` for the RKNN runtime contract.
-     * @param key Stable key identifying a configured model.
-     * @param operation Value supplied for `operation`.
-     */
+    internal fun execute(
+        key: ModelKey,
+        operation: () -> ModelResult,
+    ): ModelResult {
+        val lock = executionLock(key)
+        return synchronized(lock) {
+            if (!activeModels.containsKey(key)) return@synchronized unavailableModelResult(key)
+            val result = runCatching(operation)
+                .getOrElse {
+                    ModelFailureResult(
+                        modelId = key.value,
+                        message = "${key.value} inference failed: ${it.message.orEmpty()}",
+                    )
+                }
+                .withResultSequence(resultSequence.incrementAndGet())
+            resultFlow(key).value = result
+            result
+        }
+    }
+
     internal fun executeDetection(
         key: ModelKey,
         operation: () -> RknnObjectDetectionResult,
     ): RknnObjectDetectionResult {
-        val lock = when (executionMode) {
-            ModelExecutionMode.SERIAL -> runtimeLock
-            ModelExecutionMode.PARALLEL -> modelExecutionLocks.computeIfAbsent(key) { Any() }
-        }
+        val lock = executionLock(key)
         return synchronized(lock) { executeDetectionLocked(key, operation) }
     }
 
@@ -209,16 +245,13 @@ class ModelApi internal constructor(
         operation: () -> RknnObjectDetectionResult,
     ): RknnObjectDetectionResult {
         if (!activeModels.containsKey(key)) return unavailableResult(key)
-        return runCatching(operation)
+        val result: RknnObjectDetectionResult = runCatching(operation)
             .getOrElse { failedResult(key, "${key.value} detection failed: ${it.message.orEmpty()}") }
-            .also { resultFlow(key).value = it }
+            .copy(resultSequence = resultSequence.incrementAndGet())
+        resultFlow(key).value = result
+        return result
     }
 
-    /**
-     * Executes `executeDetectionAsync` for the RKNN runtime contract.
-     * @param key Stable key identifying a configured model.
-     * @param operation Value supplied for `operation`.
-     */
     internal fun executeDetectionAsync(
         key: ModelKey,
         operation: () -> RknnObjectDetectionResult,
@@ -238,14 +271,30 @@ class ModelApi internal constructor(
         return true
     }
 
-    /**
-     * Executes `release` for the RKNN runtime contract.
-     */
+    internal fun executeAsync(
+        key: ModelKey,
+        operation: () -> ModelResult,
+    ): Boolean {
+        if (!activeModels.containsKey(key)) return false
+        val modelMutex = busy.computeIfAbsent(key) { Mutex() }
+        if (!modelMutex.tryLock()) return false
+        val activeScope = scope
+        if (activeScope == null || !activeScope.isActive) {
+            modelMutex.unlock()
+            return false
+        }
+        val job = activeScope.launch { execute(key, operation) }
+        job.invokeOnCompletion { modelMutex.unlock() }
+        return true
+    }
+
+    /** Cancels inference, unregisters every model, and releases native runtime resources. */
     fun release() {
         releaseResources()
         _state.value = MultimodalState(lifecycle = MultimodalLifecycle.RELEASED)
     }
 
+    /** Releases this API and all native model resources. */
     override fun close() = release()
 
     private fun releaseResources() {
@@ -258,7 +307,7 @@ class ModelApi internal constructor(
         runtime.release()
         busy.clear()
         modelExecutionLocks.clear()
-        executionMode = ModelExecutionMode.SERIAL
+        runMode = RunMode.SERIAL
         resultFlows.values.forEach { it.value = null }
     }
 
@@ -296,8 +345,32 @@ class ModelApi internal constructor(
         )
     }
 
-    private fun resultFlow(key: ModelKey): MutableStateFlow<RknnObjectDetectionResult?> =
+    private fun resultFlow(key: ModelKey): MutableStateFlow<ModelResult?> =
         resultFlows.computeIfAbsent(key) { MutableStateFlow(null) }
+
+    private fun runConfiguredModel(key: ModelKey, bitmap: Bitmap): ModelResult =
+        when (activeModels[key]?.type) {
+            RknnModelType.REID_EMBEDDING -> runtime.extractEmbedding(key.value, bitmap)
+            else -> runtime.detectObjects(key.value, bitmap)
+        }
+
+    private fun executionLock(key: ModelKey): Any = when (runMode) {
+        RunMode.SERIAL -> runtimeLock
+        RunMode.PARALLEL -> modelExecutionLocks.computeIfAbsent(key) { Any() }
+    }
+
+    private fun unavailableModelResult(key: ModelKey): ModelFailureResult {
+        val detectionFailure = unavailableResult(key)
+        return ModelFailureResult(
+            backend = detectionFailure.backend,
+            modelId = detectionFailure.modelId,
+            durationMs = detectionFailure.durationMs,
+            message = detectionFailure.message,
+        )
+    }
+
+    private fun requiresLabels(type: RknnModelType): Boolean =
+        type != RknnModelType.REID_EMBEDDING && type != RknnModelType.CUSTOM
 
     private fun mapOfAllEnabled(
         configs: Map<ModelKey, DetectorModel>,

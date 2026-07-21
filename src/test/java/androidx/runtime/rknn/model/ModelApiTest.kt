@@ -188,8 +188,22 @@ class ModelApiTest {
 
         val actual = sdk.executeDetection(ModelKey.TARGET) { expected }
 
-        assertEquals(expected, actual)
-        assertEquals(expected, sdk.result(ModelKey.TARGET).value)
+        assertEquals(expected.copy(resultSequence = actual.resultSequence), actual)
+        assertEquals(actual, sdk.result(ModelKey.TARGET).value)
+    }
+
+    @Test
+    fun detectForRole_publishesRepeatedEqualResultsWithIncreasingSequence() {
+        createModel("target.rknn")
+        val sdk = ModelApi(FakeModelRuntime())
+        sdk.initializeModelRoot(temporaryFolder.root, config(target = enabledTarget()), RknnState.READY)
+        val expected = success("target")
+
+        val first = sdk.executeDetection(ModelKey.TARGET) { expected }
+        val second = sdk.executeDetection(ModelKey.TARGET) { expected }
+
+        assertTrue(second.resultSequence > first.resultSequence)
+        assertEquals(second, sdk.result(ModelKey.TARGET).value)
     }
 
     @Test
@@ -239,12 +253,12 @@ class ModelApiTest {
         assertFalse(sdk.executeDetectionAsync(ModelKey.TARGET) { expected })
         release.countDown()
 
-        assertTrue(waitUntil { sdk.result(ModelKey.TARGET).value == expected })
+        assertTrue(waitUntil { sdk.result(ModelKey.TARGET).value?.modelId == expected.modelId })
     }
 
     @Test
     fun serialExecutionMode_runsDifferentModelsOneAtATime() {
-        val sdk = initializedTwoModelSdk(ModelExecutionMode.SERIAL)
+        val sdk = initializedTwoModelSdk(RunMode.SERIAL)
         val firstStarted = CountDownLatch(1)
         val allowFirstToFinish = CountDownLatch(1)
         val secondStarted = CountDownLatch(1)
@@ -273,7 +287,7 @@ class ModelApiTest {
 
     @Test
     fun parallelExecutionMode_runsDifferentModelsConcurrently() {
-        val sdk = initializedTwoModelSdk(ModelExecutionMode.PARALLEL)
+        val sdk = initializedTwoModelSdk(RunMode.PARALLEL)
         val bothStarted = CountDownLatch(2)
         val allowFinish = CountDownLatch(1)
         val executor = Executors.newFixedThreadPool(2)
@@ -320,17 +334,17 @@ class ModelApiTest {
         )
         val expected = success("ppe")
 
-        sdk.executeDetection(custom) { expected }
+        val actual = sdk.executeDetection(custom) { expected }
 
         assertTrue(sdk.state.value.readiness(custom).ready)
-        assertEquals(expected, sdk.result(custom).value)
+        assertEquals(expected.copy(resultSequence = actual.resultSequence), sdk.result(custom).value)
     }
 
     private fun createModel(name: String): File = temporaryFolder.newFile(name)
 
     private fun enabledTarget() = DetectorModel(fileName = "target.rknn", labels = listOf("head"))
 
-    private fun initializedTwoModelSdk(mode: ModelExecutionMode): ModelApi {
+    private fun initializedTwoModelSdk(mode: RunMode): ModelApi {
         createModel("target.rknn")
         createModel("action.rknn")
         return ModelApi(FakeModelRuntime()).also { sdk ->
@@ -339,7 +353,7 @@ class ModelApiTest {
                 config(
                     target = enabledTarget(),
                     action = DetectorModel(fileName = "action.rknn", labels = listOf("action")),
-                    executionMode = mode,
+                    runMode = mode,
                 ),
                 RknnState.READY,
             )
@@ -350,14 +364,14 @@ class ModelApiTest {
         target: DetectorModel = DetectorModel(enabled = false, fileName = "target.rknn"),
         action: DetectorModel = DetectorModel(enabled = false, fileName = "action.rknn"),
         mask: DetectorModel = DetectorModel(enabled = false, fileName = "mask.rknn"),
-        executionMode: ModelExecutionMode = ModelExecutionMode.SERIAL,
+        runMode: RunMode = RunMode.SERIAL,
     ) = ModelConfig(
         models = mapOf(
             ModelKey.TARGET to target,
             ModelKey.ACTION to action,
             ModelKey.MASK to mask,
         ),
-        executionMode = executionMode,
+        runMode = runMode,
     )
 
     private fun success(id: String) = RknnObjectDetectionResult(

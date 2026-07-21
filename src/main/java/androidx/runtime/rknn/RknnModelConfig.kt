@@ -8,9 +8,41 @@ import androidx.runtime.rknn.decoder.HandLandmarkModel
 import androidx.runtime.rknn.decoder.PoseLandmarkModel
 
 /**
- * Provides the `RknnModelConfig` contract used by the RKNN Android runtime.
+ * Complete runtime and decoder configuration used to register an RKNN model.
  *
- * Usage: create or reference `RknnModelConfig` where its surrounding API requires this contract.
+ * Example:
+ * ```kotlin
+ * val config = RknnModelConfig(
+ *     id = "person",
+ *     type = RknnModelType.OBJECT_DETECTOR,
+ *     fileName = "person.rknn",
+ *     inputWidth = 640,
+ *     inputHeight = 640,
+ *     labels = listOf("person"),
+ * )
+ * ```
+ *
+ * @property id Unique non-empty model identifier.
+ * @property type Semantic model purpose.
+ * @property fileName File name relative to [RknnOptions.modelRoot].
+ * @property inputWidth Input tensor width in pixels.
+ * @property inputHeight Input tensor height in pixels.
+ * @property labels Class labels indexed by model class ID.
+ * @property scoreThreshold Minimum accepted confidence.
+ * @property maxResults Maximum decoded results returned per request.
+ * @property inputType Input tensor data type.
+ * @property inputLayout Input tensor layout.
+ * @property normalization Pixel normalization applied during preprocessing.
+ * @property decoderType Output decoder format.
+ * @property mediaPipeModel MediaPipe object detector specification when applicable.
+ * @property classifierModel EfficientNet-Lite classification specification.
+ * @property classifierScoreType Interpretation of classifier output values.
+ * @property poseLandmarkModel MediaPipe pose landmark specification.
+ * @property handLandmarkModel MediaPipe hand landmark specification.
+ * @property nmsThreshold IoU threshold used by non-maximum suppression.
+ * @property poseKeyPointCount Number of keypoints emitted by pose detection.
+ * @property multiLabel Whether one box may return multiple categories.
+ * @property embeddingSize Expected feature vector length for ReID embedding models.
  */
 data class RknnModelConfig(
     val id: String,
@@ -33,6 +65,7 @@ data class RknnModelConfig(
     val nmsThreshold: Float = 0.5f,
     val poseKeyPointCount: Int = 17,
     val multiLabel: Boolean = false,
+    val embeddingSize: Int = 512,
 ) {
     init {
         require(inputWidth > 0 && inputHeight > 0) { "Model input size must be positive" }
@@ -40,6 +73,7 @@ data class RknnModelConfig(
         require(nmsThreshold in 0f..1f) { "NMS threshold must be between 0 and 1" }
         require(maxResults > 0) { "Maximum results must be positive" }
         require(poseKeyPointCount > 0) { "Pose key point count must be positive" }
+        require(embeddingSize > 0) { "Embedding size must be positive" }
         classifierModel?.let { model ->
             require(inputWidth == model.inputSize && inputHeight == model.inputSize) {
                 "${model.name} requires ${model.inputSize}x${model.inputSize} input"

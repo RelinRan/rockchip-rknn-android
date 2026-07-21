@@ -1,24 +1,27 @@
 package androidx.runtime.rknn.data
 
 import androidx.runtime.rknn.RknnBackend
+import androidx.runtime.rknn.ModelResult
 
 /**
- * Result returned by an object-detection or pose-detection request.
- *
- * Check [success] before consuming [detections]; when false, inspect [message].
+ * Application-level object detection result.
  *
  * @property success Whether inference and decoding completed successfully.
- * @property backend Backend that produced the result.
- * @property modelId Identifier of the registered model.
- * @property detections Decoded detections, empty when none matched or the request failed.
+ * @property backend Backend that handled the request.
+ * @property modelId Registered model identifier.
+ * @property detections Decoded detections in source image coordinates.
  * @property durationMs End-to-end inference duration in milliseconds.
- * @property message Diagnostic text for failures or noteworthy conditions.
+ * @property message Optional diagnostic or failure reason.
+ * @property resultSequence Monotonic sequence assigned when the result is published.
  */
 data class RknnObjectDetectionResult(
-    val success: Boolean,
-    val backend: RknnBackend,
-    val modelId: String,
+    override val success: Boolean,
+    override val backend: RknnBackend,
+    override val modelId: String,
     val detections: List<RknnDetection>,
-    val durationMs: Long,
-    val message: String? = null,
-)
+    override val durationMs: Long,
+    override val message: String? = null,
+    override val resultSequence: Long = 0L,
+) : ModelResult {
+    override fun withResultSequence(sequence: Long): ModelResult = copy(resultSequence = sequence)
+}
